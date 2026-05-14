@@ -6,6 +6,15 @@ DM_MAIN_MODEL = "gpt-4.1-2025-04-14"
 DM_SUMMARIZATION_MODEL = "gpt-4.1-mini-2025-04-14"
 DM_VALIDATION_MODEL = "gpt-4.1-2025-04-14"
 
+# --- OpenRouter Integration ---
+OPENROUTER_API_KEY = "your_openrouter_api_key_here"
+# Smart Routing Models via OpenRouter
+MODEL_ULTRA = "anthropic/claude-3.5-sonnet"  # For complex narration/plot
+MODEL_PRO = "openai/gpt-4o"                 # For combat/mechanics
+MODEL_FLASH = "google/gemini-flash-1.5"      # For summaries/simple state
+MODEL_CHEAP = "meta-llama/llama-3-8b-instruct:free" # For background tasks
+USE_OPENROUTER = True  # Toggle for OpenRouter routing
+
 # --- Action Prediction Model (used in action_predictor.py) ---
 ACTION_PREDICTION_MODEL = "gpt-4.1-2025-04-14"  # Use full model for accurate action prediction
 

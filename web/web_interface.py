@@ -132,6 +132,14 @@ app = Flask(__name__,
 app.config['SECRET_KEY'] = 'dungeon-master-secret-key'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+# Register API blueprints
+from api.v1.campaigns import campaigns_bp
+from api.v1.game import game_bp
+from api.v1.config import config_bp
+app.register_blueprint(campaigns_bp, url_prefix='/api/v1/campaigns')
+app.register_blueprint(game_bp, url_prefix='/api/v1/game')
+app.register_blueprint(config_bp, url_prefix='/api/v1/config')
+
 # Add static route for graphic_packs to improve thumbnail loading performance
 @app.route('/graphic_packs/<path:filename>')
 def serve_graphic_packs(filename):
@@ -1977,18 +1985,29 @@ def handle_connect():
         progress_data = module_progress_queue.get()
         emit('module_creation_progress', progress_data)
 
+@socketio.on('join_campaign')
+def handle_join_campaign(data):
+    """Join a specific campaign room for multiplayer"""
+    campaign_id = data.get('campaign_id', 'default_room')
+    username = data.get('username', 'Adventurer')
+    from flask_socketio import join_room
+    join_room(campaign_id)
+    emit('player_joined', {'username': username}, room=campaign_id)
+
 @socketio.on('user_input')
 def handle_user_input(data):
     """Handle input from the user"""
     user_input = data.get('input', '')
+    campaign_id = data.get('campaign_id', 'default_room')
     user_input_queue.put(user_input)
     
-    # Echo the input back to the game output
+    # Echo the input back to the game output in the room
     message = {
         'type': 'user-input',
-        'content': user_input
+        'content': user_input,
+        'username': data.get('username', 'Player')
     }
-    emit('game_output', message)
+    emit('game_output', message, room=campaign_id)
     add_to_message_cache(message)
 
 @socketio.on('action')
@@ -5173,6 +5192,19 @@ def handle_trigger_update():
 
     except Exception as e:
         emit('update_error', {'error': str(e)})
+
+from core.ai.harden_service import harden_dm_output
+
+def broadcast_game_output(message, campaign_id='default_room'):
+    """Broadcast validated and hardened game output to a specific room"""
+    if message.get('type') == 'narration':
+        hardened, success = harden_dm_output(message['content'])
+        if success:
+            message['content'] = hardened['narration']
+            message['actions'] = hardened['actions']
+            
+    socketio.emit('game_output', message, room=campaign_id)
+    add_to_message_cache(message)
 
 if __name__ == '__main__':
     # Create templates directory if it doesn't exist
