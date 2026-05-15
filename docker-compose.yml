@@ -1,0 +1,18 @@
+services:
+  neq-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: neq-backend
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    ports:
+      - "8357:8357" # Web interface
+      - "5000:8357" # Mobile API access on an easy port
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - WEB_PORT=8357
+    working_dir: /app
+    tty: true
+    stdin_open: true

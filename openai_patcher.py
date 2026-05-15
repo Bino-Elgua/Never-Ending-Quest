@@ -8,12 +8,24 @@ No game code changes needed!
 import os
 import sys
 
-# Try to import config to get OPENAI_BASE_URL
+# Try to import config to get OPENAI_BASE_URL or fallback to local settings
 try:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import config
-    base_url = getattr(config, 'OPENAI_BASE_URL', "http://localhost:8080/v1")
+    base_url = getattr(config, 'OPENAI_BASE_URL', None)
+    if not base_url:
+        try:
+            from utils.local_settings import load_local_settings
+            local_settings = load_local_settings()
+            base_url = local_settings.get('openai_base_url')
+            if local_settings.get('openai_key'):
+                os.environ['OPENAI_API_KEY'] = local_settings['openai_key']
+        except Exception:
+            base_url = None
 except ImportError:
+    base_url = None
+
+if not base_url:
     base_url = "http://localhost:8080/v1"
 
 # Patch OpenAI to use the configured or default local proxy

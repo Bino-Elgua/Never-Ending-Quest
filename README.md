@@ -80,6 +80,38 @@ The installer automatically:
 
 > **Note**: The game is designed for the **web interface** which provides the optimal experience with real-time updates, character sheets, visual portraits, and the module toolkit.
 
+### Docker Compose
+
+The repository includes a `docker-compose.yml` and `Dockerfile` to run the Flask backend, web frontend, and mobile REST API in a single service.
+
+1. You can use the in-app settings to provide the API key and proxy URL instead of putting them into `config.py`.
+2. If you prefer environment-based configuration, set `OPENAI_API_KEY` before starting.
+3. Build and start the app:
+
+```bash
+docker compose up --build
+```
+
+3. Access the game frontend in your browser:
+
+- `http://localhost:8357`
+
+4. The same backend API is also available for the mobile app on:
+
+- `http://localhost:5000/api/v1`
+
+If you want to run in detached mode:
+
+```bash
+docker compose up -d --build
+```
+
+To stop the service:
+
+```bash
+docker compose down
+```
+
 ## Key Features
 
 ### 💰 Advanced Token Compression (NEW!)

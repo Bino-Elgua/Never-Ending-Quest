@@ -8490,6 +8490,7 @@
                 .then(config => {
                     document.getElementById('openai-key-input').value = config.openai_key || '';
                     document.getElementById('openrouter-key-input').value = config.openrouter_key || '';
+                    document.getElementById('openai-base-url-input').value = config.openai_base_url || '';
                     document.getElementById('use-openrouter-checkbox').checked = config.use_openrouter || false;
                     document.getElementById('image-gen-checkbox').checked = config.image_generation_enabled !== false;
                     
@@ -8509,6 +8510,7 @@
             const data = {
                 openai_key: document.getElementById('openai-key-input').value,
                 openrouter_key: document.getElementById('openrouter-key-input').value,
+                openai_base_url: document.getElementById('openai-base-url-input').value,
                 use_openrouter: document.getElementById('use-openrouter-checkbox').checked,
                 image_generation_enabled: document.getElementById('image-gen-checkbox').checked
             };
@@ -8550,6 +8552,11 @@
             <div class="setting-group">
                 <label for="openrouter-key-input">OpenRouter API Key</label>
                 <input type="password" id="openrouter-key-input" placeholder="pk-...">
+            </div>
+
+            <div class="setting-group">
+                <label for="openai-base-url-input">OpenAI Base URL</label>
+                <input type="text" id="openai-base-url-input" placeholder="https://api.openai.com/v1 or http://localhost:8080/v1">
             </div>
             
             <div class="setting-row">
@@ -8613,4 +8620,4 @@
     </script>
     
 </body>
-</html>
+</html>

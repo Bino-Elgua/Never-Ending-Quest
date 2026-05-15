@@ -64,6 +64,17 @@ from PIL import Image
 # Add parent directory to path so we can import from utils, core, etc.
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from utils.local_settings import load_local_settings, apply_local_settings_to_config
+
+# Apply saved UI settings into the runtime config module before the application uses OpenAI
+local_settings = load_local_settings()
+if local_settings:
+    try:
+        import config
+        apply_local_settings_to_config(local_settings, config)
+    except Exception:
+        pass
+
 # Token tracking import
 try:
     from utils.openai_usage_tracker import track_response
@@ -5285,6 +5296,7 @@ def update_config_keys():
         settings['openrouter_key'] = data.get('openrouter_key', settings.get('openrouter_key', ''))
         settings['use_openrouter'] = data.get('use_openrouter', settings.get('use_openrouter', False))
         settings['image_generation_enabled'] = data.get('image_generation_enabled', settings.get('image_generation_enabled', True))
+        settings['openai_base_url'] = data.get('openai_base_url', settings.get('openai_base_url', ''))
         
         # Save back to file
         with open('local_settings.json', 'w') as f:
@@ -5308,12 +5320,18 @@ def update_config_keys():
 @app.route('/get_config')
 def get_config():
     """Return current configuration for the UI"""
+    try:
+        settings = load_local_settings()
+    except Exception:
+        settings = {}
+
     import config
     return jsonify({
-        "openai_key": getattr(config, 'OPENAI_API_KEY', ''),
-        "openrouter_key": getattr(config, 'OPENROUTER_API_KEY', ''),
-        "use_openrouter": getattr(config, 'USE_OPENROUTER', False),
-        "image_generation_enabled": getattr(config, 'IMAGE_GENERATION_ENABLED', True)
+        "openai_key": settings.get('openai_key', getattr(config, 'OPENAI_API_KEY', '')),
+        "openrouter_key": settings.get('openrouter_key', getattr(config, 'OPENROUTER_API_KEY', '')),
+        "openai_base_url": settings.get('openai_base_url', getattr(config, 'OPENAI_BASE_URL', '')),
+        "use_openrouter": settings.get('use_openrouter', getattr(config, 'USE_OPENROUTER', False)),
+        "image_generation_enabled": settings.get('image_generation_enabled', getattr(config, 'IMAGE_GENERATION_ENABLED', True))
     })
 
 if __name__ == '__main__':
