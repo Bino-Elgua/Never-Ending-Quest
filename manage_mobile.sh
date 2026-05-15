@@ -73,11 +73,15 @@ do_run() {
     read -p "Select [1-3]: " choice
     
     cd "$APP_DIR"
-    case $choice in
-        1) 
-           echo "Starting Web Server at http://localhost:8080"
-           flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8080 ;;
-        2) flutter run -d linux ;;
+	    case $choice in
+	        1) 
+	           BACKEND_PORT=$(python3 -c "import sys; sys.path.insert(0,'.'); import config_template as config; print(getattr(config,'WEB_PORT',8357))" 2>/dev/null || echo "8357")
+	           echo "Starting Web Server at http://localhost:8080 — connecting to backend on port $BACKEND_PORT"
+	           flutter run -d web-server \
+	             --web-hostname 0.0.0.0 \
+	             --web-port 8080 \
+	             --dart-define=API_HOST=http://127.0.0.1:$BACKEND_PORT ;;
+	        2) flutter run -d linux ;;
         3) flutter run -d android ;;
         *) echo "Invalid selection." ;;
     esac

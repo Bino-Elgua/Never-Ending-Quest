@@ -2,10 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import '../config/api_config.dart';
 
 final socketServiceProvider = Provider<SocketService>((ref) {
-  // Replace with actual backend URL
-  return SocketService(url: 'ws://127.0.0.1:8357/socket.io/?EIO=4&transport=websocket');
+  final wsUrl = ApiConfig.host.replaceFirst('http', 'ws');
+  return SocketService(url: '$wsUrl/socket.io/?EIO=4&transport=websocket');
 });
 
 class SocketService {

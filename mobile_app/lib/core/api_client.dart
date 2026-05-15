@@ -1,10 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../config/api_config.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) {
-  // Use localhost for same-device access (Termux, Web)
-  // Use 10.0.2.2 for Android Emulator to reach host machine's localhost
-  return ApiClient(baseUrl: 'http://localhost:8357/');
+  return ApiClient(baseUrl: ApiConfig.baseUrl);
 });
 
 class ApiClient {
@@ -51,6 +50,13 @@ class ApiClient {
 
   Exception _handleError(DioException e) {
     if (e.response != null) {
+      if (e.response?.statusCode == 404) {
+        return Exception(
+          'Cannot connect to game server. '
+          'Make sure the backend is running: python run_web.py\n'
+          'Expected at: $baseUrl'
+        );
+      }
       return Exception('API Error: ${e.response?.statusCode} - ${e.response?.data}');
     }
     return Exception('Network Error: ${e.message}');

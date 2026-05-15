@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../config/api_config.dart';
 import '../providers/chat_provider.dart';
 import '../providers/ai_provider.dart';
 import '../widgets/dice_roller.dart';
@@ -189,7 +190,7 @@ class _NarrationScreenState extends ConsumerState<NarrationScreen> {
             child: Opacity(
               opacity: 0.15,
               child: Image.network(
-                'http://127.0.0.1:8357/static/media/environment/$_timeOfDayImage',
+                '${ApiConfig.baseUrl}/static/media/environment/$_timeOfDayImage',
                 fit: BoxFit.cover,                errorBuilder: (context, error, stackTrace) => Container(color: Colors.black),
               ),
             ),
@@ -253,7 +254,7 @@ class _NarrationScreenState extends ConsumerState<NarrationScreen> {
                   ClipRRect(
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                     child: Image.network(
-                      msg.imageUrl!.startsWith('http') ? msg.imageUrl! : 'http://127.0.0.1:8357${msg.imageUrl}',
+                      msg.imageUrl!.startsWith('http') ? msg.imageUrl! : '${ApiConfig.baseUrl}${msg.imageUrl}',
                       fit: BoxFit.cover,
                       width: double.infinity,
                       loadingBuilder: (context, child, loadingProgress) {

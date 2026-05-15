@@ -144,10 +144,10 @@ def add_cors_headers(response):
 # Register API blueprints
 from api.v1.campaigns import campaigns_bp
 from api.v1.game import game_bp
-from api.v1.config import config_bp
+# from api.v1.config import config_bp
 app.register_blueprint(campaigns_bp, url_prefix='/api/v1/campaigns')
 app.register_blueprint(game_bp, url_prefix='/api/v1/game')
-app.register_blueprint(config_bp, url_prefix='/api/v1/config')
+# app.register_blueprint(config_bp, url_prefix='/api/v1/config')
 
 # Add static route for graphic_packs to improve thumbnail loading performance
 @app.route('/graphic_packs/<path:filename>')
@@ -507,6 +507,26 @@ class WebInput:
         
         # If we've retried too many times, return empty input
         return '\n'
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Mobile app uses this to verify server is reachable"""
+    try:
+        with open('VERSION', 'r') as f:
+            version = f.read().strip()
+    except:
+        version = "0.3.2"
+    return jsonify({
+        'status': 'ok',
+        'version': version,
+        'port': getattr(config, 'WEB_PORT', 8357)
+    }), 200
+
+@app.route('/api/status', methods=['GET'])  
+def api_status():
+    """Mobile app uses this to verify server is ready"""
+    game_ready = os.path.exists('party_tracker.json')
+    return jsonify({'ready': game_ready, 'status': 'online'}), 200
 
 @app.route('/')
 def index():
@@ -3714,7 +3734,7 @@ def fetch_npc_descriptions():
                 return
                 
             base_url = getattr(config, 'OPENAI_BASE_URL', None)
-        client = OpenAI(api_key=OPENAI_API_KEY, base_url=base_url)
+            client = OpenAI(api_key=OPENAI_API_KEY, base_url=base_url)
             
             # Load NPC compendium
             npc_compendium_path = 'data/bestiary/npc_compendium.json'
