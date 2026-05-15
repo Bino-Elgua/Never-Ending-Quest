@@ -81,17 +81,25 @@ from utils.enhanced_logger import debug, info, warning, error, game_event, set_s
 set_script_name(__name__)
 
 class CampaignManager:
-    """Manages campaign state and inter-module continuity"""
+    """Manages campaign state and inter-module continuity with session support"""
     
-    def __init__(self):
-        """Initialize campaign manager"""
-        self.campaign_file = "modules/campaign.json"
-        self.summaries_dir = "modules/campaign_summaries"
+    def __init__(self, session_manager: Optional[Any] = None):
+        """Initialize campaign manager with session scoping"""
+        self.session_manager = session_manager
+        
+        if self.session_manager:
+            self.campaign_file = self.session_manager.get_path("modules/campaign.json")
+            self.summaries_dir = self.session_manager.get_path("modules/campaign_summaries")
+            self.archives_dir = self.session_manager.get_path("modules/campaign_archives")
+        else:
+            self.campaign_file = "modules/campaign.json"
+            self.summaries_dir = "modules/campaign_summaries"
+            self.archives_dir = "modules/campaign_archives"
+            
         self.client = OpenAI(api_key=config.OPENAI_API_KEY)
         
         # Ensure directories exist
         os.makedirs(self.summaries_dir, exist_ok=True)
-        self.archives_dir = "modules/campaign_archives"
         os.makedirs(self.archives_dir, exist_ok=True)
         
         # Load or create campaign state
@@ -139,8 +147,9 @@ class CampaignManager:
             newly_integrated = stitcher.scan_and_integrate_new_modules()
 
             # CRITICAL: Reload party_tracker after integration (may have updated location IDs)
-            # Store in instance for use by calling code
-            self.party_tracker_data = safe_json_load("party_tracker.json")
+            party_file = self.session_manager.get_path("party_tracker.json") if self.session_manager else "party_tracker.json"
+            self.party_tracker_data = safe_json_load(party_file)
+            
             if self.party_tracker_data and newly_integrated:
                 updated_loc = self.party_tracker_data.get('worldConditions', {}).get('currentLocationId', 'Unknown')
                 info(f"INITIALIZATION: Reloaded party tracker after integration. Location: {updated_loc}", category="module_loading")

@@ -1994,21 +1994,46 @@ def handle_join_campaign(data):
     join_room(campaign_id)
     emit('player_joined', {'username': username}, room=campaign_id)
 
+from core.managers.game_manager import GameManager
+
+# Session Registry: campaign_id -> GameManager
+game_sessions = {}
+
+def get_game_manager(campaign_id):
+    if campaign_id not in game_sessions:
+        game_sessions[campaign_id] = GameManager(campaign_id)
+        game_sessions[campaign_id].session.initialize_session()
+    return game_sessions[campaign_id]
+
 @socketio.on('user_input')
 def handle_user_input(data):
-    """Handle input from the user"""
+    """Handle input from the user and process via scoped GameManager"""
     user_input = data.get('input', '')
     campaign_id = data.get('campaign_id', 'default_room')
-    user_input_queue.put(user_input)
+    username = data.get('username', 'Player')
     
-    # Echo the input back to the game output in the room
-    message = {
+    # Broadcast the input to all players in the campaign immediately
+    input_msg = {
         'type': 'user-input',
         'content': user_input,
-        'username': data.get('username', 'Player')
+        'username': username
     }
-    emit('game_output', message, room=campaign_id)
-    add_to_message_cache(message)
+    emit('game_output', input_msg, room=campaign_id)
+    
+    # Process with Scoped Game Manager
+    manager = get_game_manager(campaign_id)
+    
+    # Run in background to not block SocketIO
+    def process_ai():
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        response = loop.run_until_complete(manager.process_user_input(user_input, username))
+        
+        # Broadcast the DM response to the room
+        socketio.emit('game_output', response, room=campaign_id)
+        
+    threading.Thread(target=process_ai).start()
 
 @socketio.on('action')
 def handle_action(data):
