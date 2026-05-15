@@ -47,6 +47,17 @@ from model_config import *
 # WARNING: Replace with your actual OpenAI API key and move to environment variables in production
 OPENAI_API_KEY = "your_openai_api_key_here"
 
+# --- LLM Provider Settings ---
+# Set OPENAI_BASE_URL to use other providers (e.g., OpenRouter, LM Studio, Ollama)
+# For OpenRouter: "https://openrouter.ai/api/v1"
+# For LM Studio: "http://localhost:1234/v1"
+OPENAI_BASE_URL = None 
+
+# --- OpenRouter Specific Settings ---
+# If USE_OPENROUTER is True, the system will use OpenRouter-specific optimizations
+USE_OPENROUTER = False
+OPENROUTER_API_KEY = "your_openrouter_api_key_here"
+
 # --- Module folder structure ---
 MODULES_DIR = "modules"
 DEFAULT_MODULE = "The_Thornwood_Watch"

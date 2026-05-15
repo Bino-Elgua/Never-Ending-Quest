@@ -570,9 +570,9 @@ The plot title should reference this specific area, not other locations.
             
         # Import OpenAI at the function level to avoid circular imports
         from openai import OpenAI
-        from config import OPENAI_API_KEY, DM_MAIN_MODEL
+        from config import OPENAI_API_KEY, DM_MAIN_MODEL, OPENAI_BASE_URL
         
-        client = OpenAI(api_key=OPENAI_API_KEY)
+        client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
         
         # Prepare context for unification
         area_summaries = []
@@ -762,9 +762,9 @@ IMPORTANT:
         
         # Import here to avoid circular imports
         from openai import OpenAI
-        from config import OPENAI_API_KEY, DM_MAIN_MODEL
+        from config import OPENAI_API_KEY, DM_MAIN_MODEL, OPENAI_BASE_URL
         
-        client = OpenAI(api_key=OPENAI_API_KEY)
+        client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
         
         # Update each area's plot hooks
         for area_id in self.areas_data:
@@ -1364,7 +1364,7 @@ def parse_narrative_to_module_params(narrative: str) -> Dict[str, Any]:
     from openai import OpenAI
     import config
     
-    client = OpenAI(api_key=config.OPENAI_API_KEY)
+    client = OpenAI(api_key=config.OPENAI_API_KEY, base_url=getattr(config, "OPENAI_BASE_URL", None))
     
     parsing_prompt = """You are a module configuration parser for the world's most popular 5th edition tabletop role-playing game. Extract adventure module parameters from a narrative description.
 

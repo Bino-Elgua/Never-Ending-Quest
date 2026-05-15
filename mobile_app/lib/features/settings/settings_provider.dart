@@ -64,7 +64,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   Future<void> _syncWithBackend(WidgetRef ref) async {
     final apiClient = ref.read(apiClientProvider);
     try {
-      await apiClient.post('/config/update-keys', data: {
+      await apiClient.post('api/v1/config/update-keys', data: {
         'openai_key': state.openAiKey,
         'openrouter_key': state.openRouterKey,
         'use_openrouter': state.useOpenRouter,

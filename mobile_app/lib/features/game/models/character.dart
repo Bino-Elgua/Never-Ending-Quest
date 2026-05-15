@@ -10,6 +10,11 @@ class Character {
   final String? alignment;
   final int hp;
   final int maxHp;
+  final int? armorClass;
+  final int? initiative;
+  final int? xp;
+  final int? nextLevelXp;
+  final Currency? currency;
 
   Character({
     required this.name,
@@ -23,23 +28,37 @@ class Character {
     this.alignment,
     required this.hp,
     required this.maxHp,
+    this.armorClass,
+    this.initiative,
+    this.xp,
+    this.nextLevelXp,
+    this.currency,
   });
 
   factory Character.fromJson(Map<String, dynamic> json) {
+    // Handle both mobile and web backend field names
+    final abilities = json['abilities'] as Map<String, dynamic>?;
+    final statsJson = json['stats'] ?? abilities ?? {};
+
     return Character(
       name: json['name'] ?? 'Unknown',
       race: json['race'] ?? 'Unknown',
       characterClass: json['class'] ?? 'Unknown',
       level: json['level'] ?? 1,
-      stats: Stats.fromJson(json['stats'] ?? {}),
+      stats: Stats.fromJson(statsJson),
       background: List<String>.from(json['background'] ?? []),
       inventory: (json['inventory'] as List? ?? [])
           .map((i) => InventoryItem.fromJson(i))
           .toList(),
       spells: json['spells'] != null ? List<String>.from(json['spells']) : null,
       alignment: json['alignment'],
-      hp: json['hp'] ?? 10,
-      maxHp: json['maxHp'] ?? 10,
+      hp: json['hp'] ?? json['hitPoints'] ?? 10,
+      maxHp: json['maxHp'] ?? json['maxHitPoints'] ?? 10,
+      armorClass: json['armorClass'],
+      initiative: json['initiative'],
+      xp: json['experience_points'] ?? json['xp'],
+      nextLevelXp: json['exp_required_for_next_level'],
+      currency: json['currency'] != null ? Currency.fromJson(json['currency']) : null,
     );
   }
 }
@@ -78,20 +97,39 @@ class InventoryItem {
   final String? description;
   final int? weight;
   final String? type;
+  final int? quantity;
 
   InventoryItem({
     required this.name,
     this.description,
     this.weight,
     this.type,
+    this.quantity,
   });
 
   factory InventoryItem.fromJson(Map<String, dynamic> json) {
     return InventoryItem(
-      name: json['name'] ?? 'Unknown',
+      name: json['name'] ?? json['item_name'] ?? 'Unknown',
       description: json['description'],
       weight: json['weight'],
       type: json['type'],
+      quantity: json['quantity'],
+    );
+  }
+}
+
+class Currency {
+  final int gold;
+  final int silver;
+  final int copper;
+
+  Currency({required this.gold, required this.silver, required this.copper});
+
+  factory Currency.fromJson(Map<String, dynamic> json) {
+    return Currency(
+      gold: json['gold'] ?? 0,
+      silver: json['silver'] ?? 0,
+      copper: json['copper'] ?? 0,
     );
   }
 }

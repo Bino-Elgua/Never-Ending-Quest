@@ -24,7 +24,7 @@ class IncrementalLocationCompressor:
     """Handles incremental compression of messages at current location."""
     
     def __init__(self):
-        self.client = OpenAI(api_key=config.OPENAI_API_KEY)
+        self.client = OpenAI(api_key=config.OPENAI_API_KEY, base_url=getattr(config, "OPENAI_BASE_URL", None))
         self.COMPRESSION_MODEL = "gpt-4.1-mini-2025-04-14"
         self.COMPRESSION_TEMP = 0.3
         self.TRIGGER_THRESHOLD = 15  # Compress when reaching 15 pairs

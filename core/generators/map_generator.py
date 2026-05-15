@@ -10,7 +10,8 @@ class MapGenerator:
     """Generates procedural battle maps using AI."""
 
     def __init__(self):
-        self.client = OpenAI(api_key=config.OPENAI_API_KEY)
+        base_url = getattr(config, 'OPENAI_BASE_URL', None)
+        self.client = OpenAI(api_key=config.OPENAI_API_KEY, base_url=base_url)
 
     def generate_battle_map(self, location_description, environment_type="dungeon"):
         """

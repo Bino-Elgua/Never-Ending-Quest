@@ -33,7 +33,7 @@ except:
     def track_response(r): pass
 
 from jsonschema import validate, ValidationError
-from config import OPENAI_API_KEY, ADVENTURE_SUMMARY_MODEL
+from config import OPENAI_API_KEY, ADVENTURE_SUMMARY_MODEL, OPENAI_BASE_URL
 from utils.module_path_manager import ModulePathManager
 from utils.encoding_utils import sanitize_text, safe_json_load, safe_json_dump
 from core.managers.status_manager import status_generating_summary
@@ -43,7 +43,7 @@ from utils.enhanced_logger import debug, info, warning, error, set_script_name
 set_script_name("adv_summary")
 
 TEMPERATURE = 0.8
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 
 def get_current_location():
     try:

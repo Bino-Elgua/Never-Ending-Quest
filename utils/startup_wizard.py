@@ -93,6 +93,10 @@ if not web_mode:
 # Initialize OpenAI client
 client = OpenAI(api_key=config.OPENAI_API_KEY)
 
+# Initialize OpenRouter client if enabled
+from utils.openrouter_client import OpenRouterClient
+openrouter = OpenRouterClient() if getattr(config, 'USE_OPENROUTER', False) else None
+
 # Conversation file for character creation (separate from main game)
 STARTUP_CONVERSATION_FILE = "modules/conversation_history/startup_conversation.json"
 
@@ -1621,23 +1625,38 @@ def get_ai_response(conversation):
     """Get AI response for character creation"""
     try:
         status_processing_ai()
-        response = client.chat.completions.create(
-            model=config.DM_MAIN_MODEL,
-            temperature=0.7,
-            messages=conversation
-        )
-        
-        content = response.choices[0].message.content.strip()
+
+        content = None
+        # Try OpenRouter if enabled
+        if openrouter and getattr(config, 'USE_OPENROUTER', False):
+            try:
+                content = openrouter.chat(conversation)
+                if content:
+                    info("STARTUP_WIZARD: Received response from OpenRouter")
+            except Exception as e:
+                error(f"STARTUP_WIZARD: OpenRouter failed: {e}")
+
+        # Fallback to direct OpenAI client
+        if not content:
+            response = client.chat.completions.create(
+                model=config.DM_MAIN_MODEL,
+                temperature=0.7,
+                messages=conversation
+            )
+            content = response.choices[0].message.content.strip()
+            info("STARTUP_WIZARD: Received response from OpenAI")
+
         conversation.append({"role": "assistant", "content": content})
-        
+
         # Save conversation
         status_saving()
         safe_json_dump(conversation, STARTUP_CONVERSATION_FILE)
-        
+
         status_ready()
         return content
-        
+
     except Exception as e:
+
         error_str = str(e)
         print(f"Error: Error getting AI response: {e}")
         
@@ -1718,15 +1737,23 @@ Respond with ONLY a JSON object in this exact format:
   "politicalClimate": "brief political situation"
 }}"""
 
-        client = OpenAI(api_key=config.OPENAI_API_KEY)
-        response = client.chat.completions.create(
-            model=config.DM_MINI_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7
-        )
+        content = None
+        # Try OpenRouter if enabled
+        if openrouter and getattr(config, 'USE_OPENROUTER', False):
+            try:
+                content = openrouter.chat([{"role": "user", "content": prompt}], model=config.DM_MINI_MODEL)
+            except Exception: pass
+
+        if not content:
+            response = client.chat.completions.create(
+                model=config.DM_MINI_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7
+            )
+            content = response.choices[0].message.content.strip()
         
         # Parse AI response
-        ai_response = response.choices[0].message.content.strip()
+        ai_response = content
         debug(f"AI_RESPONSE: Raw AI response: {ai_response}", category="startup_wizard")
         
         # Extract JSON from response

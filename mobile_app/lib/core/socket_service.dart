@@ -5,7 +5,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 final socketServiceProvider = Provider<SocketService>((ref) {
   // Replace with actual backend URL
-  return SocketService(url: 'ws://localhost:5000/socket.io/?EIO=4&transport=websocket');
+  return SocketService(url: 'ws://127.0.0.1:8357/socket.io/?EIO=4&transport=websocket');
 });
 
 class SocketService {

@@ -1,12 +1,23 @@
 from flask import Blueprint, jsonify, request
 import os
 import json
+import asyncio
 from utils.file_operations import safe_read_json
 from utils.module_path_manager import ModulePathManager
 from core.managers.session_manager import SessionManager
 from core.managers.campaign_manager import CampaignManager
+from core.managers.game_manager import GameManager
 
 game_bp = Blueprint('game', __name__)
+
+# Registry for session-specific game managers
+game_sessions = {}
+
+def get_game_manager(session_id):
+    if session_id not in game_sessions:
+        game_sessions[session_id] = GameManager(session_id)
+        game_sessions[session_id].session.initialize_session()
+    return game_sessions[session_id]
 
 @game_bp.route('/<session_id>/status', methods=['GET'])
 def get_game_status(session_id):
@@ -54,20 +65,34 @@ def get_chat_history(session_id):
 @game_bp.route('/<session_id>/action', methods=['POST'])
 def perform_action(session_id):
     """Process a game action within a session context"""
-    session = SessionManager(session_id)
     data = request.get_json() or {}
     user_input = data.get('input')
+    username = data.get('username', 'Mobile User')
     
     if not user_input:
         return jsonify({"success": False, "message": "No input provided"}), 400
         
-    # Trigger AI processing via event bus or direct call (for prototype)
-    # In full implementation, this would publish to Redis Pub/Sub
-    return jsonify({
-        "success": True, 
-        "message": f"Action received for session {session_id}.",
-        "input": user_input
-    })
+    # Get manager for this session
+    manager = get_game_manager(session_id)
+    
+    # Process AI response synchronously for the REST API
+    try:
+        # Create a new event loop for this request
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        response = loop.run_until_complete(manager.process_user_input(user_input, username))
+        loop.close()
+        
+        return jsonify({
+            "success": True, 
+            "message": "Action processed",
+            "response": response
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"AI processing failed: {str(e)}"
+        }), 500
 
 @game_bp.route('/<session_id>/combat-status', methods=['GET'])
 def get_combat_status(session_id):

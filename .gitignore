@@ -427,3 +427,9 @@ modules/validation_cache.json
 data/companion_memories_compressed/*_memories_*.json
 data/companion_memories_backup/
 data/companion_memories_pre_enhanced/
+
+# Local settings and runtime data
+local_settings.json
+saved_games/
+sessions/
+dummy_objective_c/

@@ -26,6 +26,6 @@ class GameStatus {
 
 final gameStatusProvider = FutureProvider<GameStatus>((ref) async {
   final apiClient = ref.watch(apiClientProvider);
-  final response = await apiClient.get('/game/status');
+  final response = await apiClient.get('api/v1/game/status');
   return GameStatus.fromJson(response.data);
 });

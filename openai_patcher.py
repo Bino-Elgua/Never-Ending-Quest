@@ -5,11 +5,20 @@ Monkey-patches the OpenAI library to redirect all API calls through a local prox
 No game code changes needed!
 """
 
-import sys
 import os
+import sys
 
-# Patch OpenAI to use our local proxy
-os.environ['OPENAI_BASE_URL'] = 'http://localhost:8080/v1'
+# Try to import config to get OPENAI_BASE_URL
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import config
+    base_url = getattr(config, 'OPENAI_BASE_URL', "http://localhost:8080/v1")
+except ImportError:
+    base_url = "http://localhost:8080/v1"
+
+# Patch OpenAI to use the configured or default local proxy
+os.environ["OPENAI_BASE_URL"] = base_url if base_url else "https://api.openai.com/v1"
+
 
 # Import and patch the openai module before anything else uses it
 import openai
@@ -22,7 +31,7 @@ original_init = openai.OpenAI.__init__
 
 def patched_init(self, *args, **kwargs):
     # Force base_url to our proxy
-    kwargs['base_url'] = 'http://localhost:8080/v1'
+    kwargs['base_url'] = base_url
     # Remove any httpx_client to avoid SSL issues
     kwargs.pop('httpx_client', None)
     kwargs.pop('http_client', None)
@@ -32,9 +41,9 @@ openai.OpenAI.__init__ = patched_init
 
 # Also patch the module-level client if it exists
 if hasattr(openai, 'api_base'):
-    openai.api_base = 'http://localhost:8080/v1'
+    openai.api_base = base_url
 
-print("[OpenAI Patcher] OpenAI library patched to use localhost:8080")
+print(f"[OpenAI Patcher] OpenAI library patched to use {base_url}")
 print("[OpenAI Patcher] All API calls will be redirected through the local proxy")
 
 # Now import and run the actual game

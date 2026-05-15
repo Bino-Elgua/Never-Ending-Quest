@@ -107,18 +107,20 @@ class CombatCompressor:
         if api_key is None:
             api_key = os.environ.get('OPENAI_API_KEY')
         
+        base_url = None
         if api_key is None:
             try:
                 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
                 import config
                 api_key = getattr(config, 'OPENAI_API_KEY', None)
+                base_url = getattr(config, 'OPENAI_BASE_URL', None)
             except:
                 pass
         
         if not api_key:
             raise ValueError("OpenAI API key required")
         
-        self.client = OpenAI(api_key=api_key)
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model = NARRATIVE_COMPRESSION_MODEL
         self.enable_caching = enable_caching
         self.cache_file = Path("modules/conversation_history/combat_compression_cache.json")

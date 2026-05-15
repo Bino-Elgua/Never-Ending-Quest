@@ -51,6 +51,7 @@ import json
 import threading
 import queue
 import time
+import asyncio
 import webbrowser
 from datetime import datetime
 from collections import deque
@@ -130,7 +131,15 @@ app = Flask(__name__,
             template_folder=template_dir,
             static_folder=static_dir)
 app.config['SECRET_KEY'] = 'dungeon-master-secret-key'
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+# Manual CORS implementation
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    return response
 
 # Register API blueprints
 from api.v1.campaigns import campaigns_bp
@@ -152,7 +161,7 @@ def serve_graphic_packs(filename):
 # Suppress werkzeug HTTP request logs (they clutter the console)
 import logging
 log = logging.getLogger('werkzeug')
-log.setLevel(logging.ERROR)  # Only show errors, not every HTTP request
+log.setLevel(logging.INFO)  # Show all requests for debugging
 
 # Import shared state
 from web.shared_state import module_progress_queue
@@ -1595,7 +1604,8 @@ def promote_to_bestiary():
         Make it sound like an entry from an official monster manual. Do not include stat blocks."""
         
         from config import OPENAI_API_KEY
-        client = OpenAI(api_key=OPENAI_API_KEY)
+        base_url = getattr(config, 'OPENAI_BASE_URL', None)
+        client = OpenAI(api_key=OPENAI_API_KEY, base_url=base_url)
         
         response = client.chat.completions.create(
             model=DM_MINI_MODEL,
@@ -2025,16 +2035,18 @@ def handle_user_input(data):
     
     # Run in background to not block SocketIO
     def process_ai():
-        import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        response = loop.run_until_complete(manager.process_user_input(user_input, username))
-        
-        # Broadcast the DM response to the room
-        socketio.emit('game_output', response, room=campaign_id)
-        
-    threading.Thread(target=process_ai).start()
+        try:
+            # Using asyncio.run is cleaner and uses a fresh loop correctly
+            response = asyncio.run(manager.process_user_input(user_input, username))
+            # Broadcast the DM response to the room
+            socketio.emit('game_output', response, room=campaign_id)
+        except Exception as e:
+            from utils.enhanced_logger import error
+            error(f"Error in process_ai: {e}")
+            error_msg = {"type": "error", "content": f"The weave was interrupted: {str(e)}"}
+            socketio.emit('game_output', error_msg, room=campaign_id)
 
+    socketio.start_background_task(process_ai)
 @socketio.on('action')
 def handle_action(data):
     """Handle direct action requests from the UI (save, load, reset)."""
@@ -2969,7 +2981,8 @@ def handle_generate_image(data):
         from utils.file_operations import safe_read_json, safe_write_json
         
         # Initialize OpenAI client
-        client = OpenAI(api_key=config.OPENAI_API_KEY)
+        base_url = getattr(config, 'OPENAI_BASE_URL', None)
+        client = OpenAI(api_key=config.OPENAI_API_KEY, base_url=base_url)
         
         # Try to generate image
         try:
@@ -3113,7 +3126,8 @@ def generate_tts():
             selected_model = TTS_MODEL
         
         # Initialize OpenAI client
-        client = OpenAI(api_key=config.OPENAI_API_KEY)
+        base_url = getattr(config, 'OPENAI_BASE_URL', None)
+        client = OpenAI(api_key=config.OPENAI_API_KEY, base_url=base_url)
         
         # Generate speech
         response = client.audio.speech.create(
@@ -3699,7 +3713,8 @@ def fetch_npc_descriptions():
                 error("TOOLKIT: OpenAI API key not configured")
                 return
                 
-            client = OpenAI(api_key=OPENAI_API_KEY)
+            base_url = getattr(config, 'OPENAI_BASE_URL', None)
+        client = OpenAI(api_key=OPENAI_API_KEY, base_url=base_url)
             
             # Load NPC compendium
             npc_compendium_path = 'data/bestiary/npc_compendium.json'
@@ -5230,6 +5245,56 @@ def broadcast_game_output(message, campaign_id='default_room'):
             
     socketio.emit('game_output', message, room=campaign_id)
     add_to_message_cache(message)
+
+@app.route('/config/update-keys', methods=['POST'])
+def update_config_keys():
+    """Sync and persist AI configuration keys"""
+    data = request.json
+    if not data:
+        return jsonify({"status": "error", "message": "No data provided"}), 400
+    
+    try:
+        # Load existing local settings
+        settings = {}
+        if os.path.exists('local_settings.json'):
+            with open('local_settings.json', 'r') as f:
+                settings = json.load(f)
+        
+        # Update with new data
+        settings['openai_key'] = data.get('openai_key', settings.get('openai_key', ''))
+        settings['openrouter_key'] = data.get('openrouter_key', settings.get('openrouter_key', ''))
+        settings['use_openrouter'] = data.get('use_openrouter', settings.get('use_openrouter', False))
+        settings['image_generation_enabled'] = data.get('image_generation_enabled', settings.get('image_generation_enabled', True))
+        
+        # Save back to file
+        with open('local_settings.json', 'w') as f:
+            json.dump(settings, f, indent=2)
+            
+        # Dynamically update the config module for the current session
+        import config
+        config.OPENAI_API_KEY = settings['openai_key']
+        config.OPENROUTER_API_KEY = settings['openrouter_key']
+        config.USE_OPENROUTER = settings['use_openrouter']
+        config.IMAGE_GENERATION_ENABLED = settings['image_generation_enabled']
+        
+        # Update model_config as well if they are imported there
+        import model_config
+        model_config.USE_OPENROUTER = settings['use_openrouter']
+        
+        return jsonify({"status": "success", "message": "Configuration updated successfully"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/get_config')
+def get_config():
+    """Return current configuration for the UI"""
+    import config
+    return jsonify({
+        "openai_key": getattr(config, 'OPENAI_API_KEY', ''),
+        "openrouter_key": getattr(config, 'OPENROUTER_API_KEY', ''),
+        "use_openrouter": getattr(config, 'USE_OPENROUTER', False),
+        "image_generation_enabled": getattr(config, 'IMAGE_GENERATION_ENABLED', True)
+    })
 
 if __name__ == '__main__':
     # Create templates directory if it doesn't exist

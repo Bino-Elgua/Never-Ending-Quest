@@ -119,7 +119,7 @@ class ModuleStitcher:
         self.root_dir = os.path.dirname(self.modules_dir)
         self.world_registry_file = os.path.join(self.modules_dir, "world_registry.json")
         self.party_tracker_file = os.path.join(self.root_dir, "party_tracker.json")
-        self.client = OpenAI(api_key=config.OPENAI_API_KEY)
+        self.client = OpenAI(api_key=config.OPENAI_API_KEY, base_url=getattr(config, "OPENAI_BASE_URL", None))
 
         # Ensure directories exist
         os.makedirs(self.modules_dir, exist_ok=True)

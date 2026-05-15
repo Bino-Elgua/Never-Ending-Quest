@@ -7,6 +7,116 @@
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
     <style>
+        /* Arcane Settings Dialog Styles */
+        .settings-dialog-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            backdrop-filter: blur(5px);
+        }
+
+        .settings-dialog {
+            background-color: #1a1a1a;
+            border: 2px solid #5D001E;
+            border-radius: 12px;
+            padding: 30px;
+            width: 500px;
+            max-width: 90%;
+            box-shadow: 0 0 30px rgba(93, 0, 30, 0.4);
+            color: #e0e0e0;
+        }
+
+        .settings-dialog h2 {
+            font-family: 'Cinzel', serif;
+            color: #E5B181;
+            margin-bottom: 20px;
+            text-align: center;
+            border-bottom: 1px solid #5D001E;
+            padding-bottom: 10px;
+        }
+
+        .setting-group {
+            margin-bottom: 20px;
+        }
+
+        .setting-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-family: 'Cinzel', serif;
+            font-size: 14px;
+            color: #E5B181;
+        }
+
+        .setting-group input[type="text"], 
+        .setting-group input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            background-color: #0f0f0f;
+            border: 1px solid #333;
+            border-radius: 6px;
+            color: white;
+            font-family: 'Spectral', serif;
+        }
+
+        .setting-group input:focus {
+            border-color: #5D001E;
+            outline: none;
+        }
+
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .setting-row label {
+            margin-bottom: 0;
+        }
+
+        .settings-actions {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 30px;
+        }
+
+        .settings-actions button {
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: 'Cinzel', serif;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+
+        .save-settings-btn {
+            background-color: #5D001E;
+            color: white;
+            border: none;
+        }
+
+        .save-settings-btn:hover {
+            background-color: #8B0000;
+            box-shadow: 0 0 10px rgba(139, 0, 0, 0.5);
+        }
+
+        .cancel-settings-btn {
+            background-color: transparent;
+            color: #888;
+            border: 1px solid #333;
+        }
+
+        .cancel-settings-btn:hover {
+            color: white;
+            border-color: #666;
+        }
         * {
             box-sizing: border-box;
             margin: 0;
@@ -4352,6 +4462,7 @@
                 <button class="save-button" id="save-button" onclick="openSaveDialog()" disabled title="Save Game">Save</button>
                 <button class="load-button" id="load-button" onclick="openLoadDialog()" disabled title="Load Game">Load</button>
                 <button class="reset-button" id="reset-button" onclick="openResetDialog()" disabled title="Reset Campaign">Reset</button>
+                <button class="settings-button" id="settings-button" onclick="openSettingsDialog()" title="Arcane Settings">Settings</button>
             </div>
             <div class="settings-dropdown">
                 <button class="settings-button" onclick="toggleSettingsDropdown()" title="Settings">
@@ -8244,8 +8355,99 @@
             }
         }
 
+        // --- Arcane Settings Dialog Functions ---
+        function openSettingsDialog() {
+            // Fetch current configuration
+            fetch('/get_config')
+                .then(response => response.json())
+                .then(config => {
+                    document.getElementById('openai-key-input').value = config.openai_key || '';
+                    document.getElementById('openrouter-key-input').value = config.openrouter_key || '';
+                    document.getElementById('use-openrouter-checkbox').checked = config.use_openrouter || false;
+                    document.getElementById('image-gen-checkbox').checked = config.image_generation_enabled !== false;
+                    
+                    document.getElementById('settings-dialog-overlay').style.display = 'flex';
+                })
+                .catch(err => {
+                    console.error('Failed to fetch config:', err);
+                    document.getElementById('settings-dialog-overlay').style.display = 'flex';
+                });
+        }
+
+        function closeSettingsDialog() {
+            document.getElementById('settings-dialog-overlay').style.display = 'none';
+        }
+
+        function saveSettings() {
+            const data = {
+                openai_key: document.getElementById('openai-key-input').value,
+                openrouter_key: document.getElementById('openrouter-key-input').value,
+                use_openrouter: document.getElementById('use-openrouter-checkbox').checked,
+                image_generation_enabled: document.getElementById('image-gen-checkbox').checked
+            };
+            
+            fetch('/config/update-keys', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.status === 'success') {
+                    addMessage('game-output', { type: 'system', content: 'Arcane configuration updated and bound successfully.' });
+                    closeSettingsDialog();
+                } else {
+                    addMessage('game-output', { type: 'error', content: 'Failed to update configuration: ' + result.message });
+                }
+            })
+            .catch(err => {
+                console.error('Error saving settings:', err);
+                addMessage('game-output', { type: 'error', content: 'Network error while updating configuration.' });
+            });
+        }
+
     </script>
     
+    <!-- Arcane Settings Dialog -->
+    <div id="settings-dialog-overlay" class="settings-dialog-overlay">
+        <div class="settings-dialog">
+            <h2>Arcane Settings</h2>
+            
+            <div class="setting-group">
+                <label for="openai-key-input">OpenAI API Key</label>
+                <input type="password" id="openai-key-input" placeholder="sk-...">
+            </div>
+            
+            <div class="setting-group">
+                <label for="openrouter-key-input">OpenRouter API Key</label>
+                <input type="password" id="openrouter-key-input" placeholder="pk-...">
+            </div>
+            
+            <div class="setting-row">
+                <label for="use-openrouter-checkbox">Use OpenRouter</label>
+                <label class="settings-toggle">
+                    <input type="checkbox" id="use-openrouter-checkbox">
+                    <span class="settings-toggle-slider"></span>
+                </label>
+            </div>
+
+            <div class="setting-row">
+                <label for="image-gen-checkbox">Enable Image Generation</label>
+                <label class="settings-toggle">
+                    <input type="checkbox" id="image-gen-checkbox" checked>
+                    <span class="settings-toggle-slider"></span>
+                </label>
+            </div>
+            
+            <div class="settings-actions">
+                <button class="cancel-settings-btn" onclick="closeSettingsDialog()">Cancel</button>
+                <button class="save-settings-btn" onclick="saveSettings()">Save & Bind</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Unified Media Popup Modal -->
     <div id="media-popup" class="video-popup">
         <div class="video-popup-content">

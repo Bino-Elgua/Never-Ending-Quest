@@ -50,7 +50,7 @@ class LocationSummarizer:
         self.summarization_history = []
         
         # Initialize OpenAI client
-        self.client = OpenAI(api_key=config.OPENAI_API_KEY)
+        self.client = OpenAI(api_key=config.OPENAI_API_KEY, base_url=getattr(config, "OPENAI_BASE_URL", None))
         
         # No artificial compression parameters - purely agentic AI generation
         

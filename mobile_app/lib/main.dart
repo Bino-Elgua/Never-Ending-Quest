@@ -5,7 +5,9 @@ import 'features/campaigns/campaign_list_screen.dart';
 import 'features/game/screens/narration_screen.dart';
 import 'features/game/screens/character_sheet_screen.dart';
 import 'features/game/screens/combat_grid_screen.dart';
+import 'features/game/screens/journal_screen.dart';
 import 'features/settings/settings_screen.dart';
+import 'features/toolkit/screens/toolkit_screen.dart';
 
 void main() {
   runApp(
@@ -22,6 +24,7 @@ class NeverEndingQuestApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'NeverEndingQuest',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
         primaryColor: const Color(0xFF5D001E),
@@ -32,8 +35,12 @@ class NeverEndingQuestApp extends StatelessWidget {
           secondary: const Color(0xFFE5B181),
           surface: const Color(0xFF1A1A1A),
         ),
-        textTheme: GoogleFonts.cinzelTextTheme(
+        textTheme: GoogleFonts.spectralTextTheme(
           ThemeData.dark().textTheme,
+        ).copyWith(
+          displayLarge: GoogleFonts.cinzel(fontWeight: FontWeight.bold),
+          displayMedium: GoogleFonts.cinzel(fontWeight: FontWeight.bold),
+          bodyLarge: GoogleFonts.spectral(fontSize: 18),
         ),
         useMaterial3: true,
       ),
@@ -56,14 +63,17 @@ class _MainScaffoldState extends State<MainScaffold> {
     const NarrationScreen(),
     const CharacterSheetScreen(),
     const CombatGridScreen(),
-    const CampaignListScreen(),
-    const SettingsScreen(),
+    const JournalScreen(),
+    const AdventureMasterHub(),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_selectedIndex],
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _screens,
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) {
@@ -74,29 +84,71 @@ class _MainScaffoldState extends State<MainScaffold> {
         type: BottomNavigationBarType.fixed,
         backgroundColor: const Color(0xFF0F0F0F),
         selectedItemColor: const Color(0xFFE5B181),
-        unselectedItemColor: Colors.white38,
+        unselectedItemColor: Colors.white24,
+        selectedLabelStyle: GoogleFonts.cinzel(fontSize: 10, fontWeight: FontWeight.bold),
+        unselectedLabelStyle: GoogleFonts.cinzel(fontSize: 10),
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.auto_awesome),
-            label: 'Quest',
+            activeIcon: Icon(Icons.auto_awesome, color: Color(0xFFE5B181)),
+            label: 'QUEST',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),
-            label: 'Hero',
+            activeIcon: Icon(Icons.person, color: Color(0xFFE5B181)),
+            label: 'HERO',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.grid_view),
-            label: 'Combat',
+            activeIcon: Icon(Icons.grid_view_rounded, color: Color(0xFFE5B181)),
+            label: 'TACTICS',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.book_outlined),
-            label: 'Archive',
+            icon: Icon(Icons.history_edu),
+            activeIcon: Icon(Icons.history_edu, color: Color(0xFFE5B181)),
+            label: 'JOURNAL',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.settings_outlined),
-            label: 'Settings',
+            icon: Icon(Icons.castle_outlined),
+            activeIcon: Icon(Icons.castle, color: Color(0xFFE5B181)),
+            label: 'MASTER',
           ),
         ],
+      ),
+    );
+  }
+}
+
+class AdventureMasterHub extends StatelessWidget {
+  const AdventureMasterHub({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('MASTER HUB', style: GoogleFonts.cinzel(fontWeight: FontWeight.bold)),
+          centerTitle: true,
+          bottom: TabBar(
+            indicatorColor: const Color(0xFFE5B181),
+            labelColor: const Color(0xFFE5B181),
+            unselectedLabelColor: Colors.white38,
+            labelStyle: GoogleFonts.cinzel(fontWeight: FontWeight.bold),
+            tabs: const [
+              Tab(text: 'CAMPAIGNS', icon: Icon(Icons.map)),
+              Tab(text: 'TOOLKIT', icon: Icon(Icons.build)),
+              Tab(text: 'ARCANE', icon: Icon(Icons.settings)),
+            ],
+          ),
+        ),
+        body: const TabBarView(
+          children: [
+            CampaignListScreen(),
+            ToolkitScreen(),
+            SettingsScreen(),
+          ],
+        ),
       ),
     );
   }

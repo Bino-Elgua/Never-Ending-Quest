@@ -3,12 +3,12 @@ import 'package:never_ending_quest/core/api_client.dart';
 
 final campaignsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   final apiClient = ref.watch(apiClientProvider);
-  final response = await apiClient.get('/campaigns/list');
+  final response = await apiClient.get('api/v1/campaigns/list');
   return response.data;
 });
 
 final saveGamesProvider = FutureProvider<List<dynamic>>((ref) async {
   final apiClient = ref.watch(apiClientProvider);
-  final response = await apiClient.get('/campaigns/saves');
+  final response = await apiClient.get('api/v1/campaigns/saves');
   return response.data;
 });

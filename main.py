@@ -144,10 +144,11 @@ from config import (
     OPENAI_API_KEY,
     DM_MAIN_MODEL,
     DM_SUMMARIZATION_MODEL,
-    DM_VALIDATION_MODEL
+    DM_VALIDATION_MODEL,
+    OPENAI_BASE_URL
 )
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 
 # LocationGraph will be initialized inside main() after modules are integrated
 location_graph = None
@@ -1683,7 +1684,8 @@ def generate_module_summary(conversation_history, party_tracker_data, module_nam
                     conversation_text += f"{role}: {content}\n\n"
                 
                 # Generate summary using AI
-                client = OpenAI(api_key=config.OPENAI_API_KEY)
+                base_url = getattr(config, 'OPENAI_BASE_URL', None)
+                client = OpenAI(api_key=config.OPENAI_API_KEY, base_url=base_url)
                 
                 summary_prompt = f"""You are creating an adventure chronicle for a 5th edition session. Summarize this actual gameplay conversation from the {module_name} module into a compelling narrative story.
 

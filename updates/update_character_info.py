@@ -117,6 +117,7 @@ except:
 import time
 import re
 # Import model configuration from config.py
+import config
 from config import OPENAI_API_KEY, PLAYER_INFO_UPDATE_MODEL, NPC_INFO_UPDATE_MODEL
 from utils.module_path_manager import ModulePathManager
 from utils.file_operations import safe_write_json, safe_read_json
@@ -128,7 +129,10 @@ from utils.enhanced_logger import debug, info, warning, error, set_script_name
 # Set script name for logging
 set_script_name(__name__)
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+# Initialize OpenAI client safely
+base_url = getattr(config, 'OPENAI_BASE_URL', None)
+api_key = OPENAI_API_KEY if OPENAI_API_KEY else "dummy-key"
+client = OpenAI(api_key=api_key, base_url=base_url)
 
 # Constants
 TEMPERATURE = 0.7

@@ -51,6 +51,6 @@ class Combatant {
 final combatStateProvider = FutureProvider<CombatState>((ref) async {
   final apiClient = ref.watch(apiClientProvider);
   // This would be a real endpoint in the Python backend
-  final response = await apiClient.get('/game/combat-status');
+  final response = await apiClient.get('api/v1/game/combat-status');
   return CombatState.fromJson(response.data);
 });
