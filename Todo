@@ -1,0 +1,326 @@
+I need to look at the actual source code files to help you with the mobile multiplayer transition. Let me search for the repository's file structure and key implementation details.
+The search didn't return the actual source files from your repository. Since I can't directly browse GitHub file trees beyond the README, let me try to access specific files I know exist based on the README structure.
+I can't access the raw source files directly from GitHub right now due to network restrictions on my end. However, based on the detailed README I already pulled and my knowledge of the architecture, I can give you a concrete technical roadmap for converting this to mobile multiplayer. Here's what needs to happen:
+
+---
+
+Current Architecture Analysis (from README)
+
+Your stack is already partially positioned for this:
+
+Current Component	Mobile Multiplayer Needs	
+Flask + SocketIO backend	✅ Good foundation — needs session/room management	
+`web/web_interface.py`	❌ Single-player focused — needs party session abstraction	
+`run_web.py` (port 8358)	❌ Localhost only — needs public hosting + HTTPS	
+Docker Compose	✅ Good — can scale with Redis + load balancer	
+Module-centric JSON files	⚠️ File-based — needs DB migration for concurrent access	
+`main.py` terminal mode	❌ Irrelevant for mobile	
+
+---
+
+The Core Problem: File-Based → Multi-User
+
+Your current system uses local JSON files for state:
+
+```
+modules/[module]/party_tracker.json
+modules/[module]/module_plot.json
+modules/[module]/characters/*.json
+modules/conversation_history/*.json
+modules/campaign_summaries/*.json
+```
+
+For mobile multiplayer, multiple users cannot safely write to the same JSON files simultaneously. You need:
+
+1. State Layer Migration
+
+Current	Multiplayer Replacement	
+JSON files on disk	Redis or PostgreSQL for real-time state	
+`CampaignManager` (file-based)	`CampaignService` (DB-backed with locking)	
+`StorageManager` (local files)	`StorageService` (DB transactions)	
+`CompanionMemoryManager`	`NPCStateService` (shared across party)	
+
+Why Redis specifically: SocketIO already pairs perfectly with Redis for multi-server scaling via `socketio.Server(client_manager=socketio.RedisManager(...))`.
+
+---
+
+Multiplayer Architecture Design
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Player A      │     │   Player B      │     │   Player C      │
+│  (Mobile Web)   │     │  (Mobile Web)   │     │  (Mobile Web)   │
+└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │    Nginx (SSL/HTTPS)    │
+                    │    + Rate Limiting      │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │   Flask-SocketIO Server │
+                    │   (Gunicorn + Eventlet) │
+                    │   + Redis Pub/Sub       │
+                    └────────────┬────────────┘
+                                 │
+            ┌────────────────────┼────────────────────┐
+            │                    │                    │
+    ┌───────▼───────┐   ┌───────▼───────┐   ┌───────▼───────┐
+    │    Redis      │   │  PostgreSQL   │   │   OpenAI API  │
+    │  (Sessions,    │   │  (Campaigns,  │   │  (DM Engine)  │
+    │   Real-time)  │   │   State, Users) │   │               │
+    └───────────────┘   └───────────────┘   └───────────────┘
+```
+
+---
+
+Key Code Changes Needed
+
+A. SocketIO Room Management (in `web_interface.py`)
+
+Your current SocketIO setup likely broadcasts to all clients. You need rooms (one per campaign/party):
+
+```python
+# NEW: Campaign room isolation
+@socketio.on('join_campaign')
+def handle_join(data):
+    campaign_id = data['campaign_id']
+    player_id = data['player_id']  # JWT auth needed
+    
+    # Load player from DB, not JSON file
+    player = db.get_player(player_id)
+    
+    join_room(campaign_id)
+    
+    # Broadcast to party members
+    emit('player_joined', {
+        'player': player.public_data(),
+        'party': db.get_party(campaign_id)
+    }, room=campaign_id)
+```
+
+B. Turn-Based Synchronization
+
+For D&D-style gameplay, you need a turn sequencer:
+
+```python
+# NEW: Turn manager service
+class TurnManager:
+    def __init__(self, campaign_id, redis_client):
+        self.campaign_id = campaign_id
+        self.redis = redis_client
+    
+    def submit_action(self, player_id, action):
+        # Lock campaign state
+        with self.redis.lock(f"campaign:{self.campaign_id}"):
+            state = self.load_state()
+            
+            if state['current_turn'] != player_id:
+                return {'error': 'Not your turn'}
+            
+            # Process action via existing DM engine
+            result = dm_engine.process(action, state)
+            
+            # Advance turn
+            state = self.advance_turn(state)
+            self.save_state(state)
+            
+            # Broadcast to all players in room
+            socketio.emit('turn_result', result, room=self.campaign_id)
+            socketio.emit('state_update', state, room=self.campaign_id)
+```
+
+C. DM Engine Adaptation
+
+Your `core/ai/dm_wrapper.py` currently assumes a single player. For multiplayer:
+
+```python
+# CURRENT (single player):
+def process_player_input(user_input, conversation_history):
+    return openai_client.chat.completions.create(...)
+
+# NEW (multiplayer):
+def process_party_input(player_id, user_input, campaign_state):
+    # 1. Determine if this is a party action or individual action
+    action_type = classify_action(user_input)
+    
+    if action_type == 'party_action':
+        # Requires all players to confirm (e.g., "we all rest")
+        return queue_party_action(player_id, user_input, campaign_state)
+    
+    elif action_type == 'combat_action':
+        # Only valid on player's turn
+        return process_combat_turn(player_id, user_input, campaign_state)
+    
+    else:
+        # Individual RP — DM responds to specific player
+        return process_individual_dialogue(player_id, user_input, campaign_state)
+```
+
+D. Compression System Scaling
+
+Your token compression (`core/ai/conversation_compression.py`) needs to handle multiple concurrent compression jobs per campaign:
+
+```python
+# NEW: Per-campaign compression queues
+class CampaignCompressionEngine:
+    def __init__(self):
+        self.campaign_queues = {}  # campaign_id -> asyncio.Queue
+    
+    async def compress_for_campaign(self, campaign_id, messages):
+        # Serialize per campaign to avoid cross-contamination
+        queue = self.campaign_queues.get(campaign_id)
+        await queue.put(messages)
+        
+        # Worker processes per campaign
+        compressed = await self.parallel_compress(messages)
+        return compressed
+```
+
+---
+
+Mobile-Specific Requirements
+
+1. Responsive UI (from current web interface)
+
+Your current web UI needs:
+- Touch-optimized controls (larger buttons, swipe gestures)
+- Portrait/landscape adaptation (character sheet sidebar collapses)
+- Offline queueing (actions queued when connection drops, synced on reconnect)
+- Push notifications (SocketIO reconnect + Web Push API for "your turn")
+
+2. Authentication
+
+Currently you have no auth (localhost-only). For public mobile:
+
+```python
+# NEW: JWT auth middleware
+from flask_jwt_extended import JWTManager, jwt_required
+
+app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY')
+jwt = JWTManager(app)
+
+@socketio.on('authenticate')
+def handle_auth(token):
+    try:
+        decoded = jwt.decode(token, app.config['JWT_SECRET_KEY'], algorithms=['HS256'])
+        # Attach user to socket session
+        request.player_id = decoded['player_id']
+    except:
+        emit('auth_error', {'msg': 'Invalid token'})
+        disconnect()
+```
+
+3. API for Native Mobile Apps
+
+Your README mentions a mobile REST API on port 5000 in Docker. You need to expand this:
+
+```python
+# NEW: REST endpoints for mobile clients
+@app.route('/api/v1/campaigns', methods=['GET', 'POST'])
+@jwt_required()
+def campaigns():
+    player_id = get_jwt_identity()
+    if request.method == 'POST':
+        # Create campaign, return invite code
+        campaign = CampaignService.create(player_id)
+        return jsonify(campaign.to_dict())
+    else:
+        return jsonify(CampaignService.list_for_player(player_id))
+
+@app.route('/api/v1/campaigns/<id>/join', methods=['POST'])
+@jwt_required()
+def join_campaign(id):
+    player_id = get_jwt_identity()
+    invite_code = request.json.get('invite_code')
+    CampaignService.join(player_id, id, invite_code)
+    return jsonify({'status': 'joined'})
+```
+
+---
+
+Deployment for Mobile Access
+
+Current: `localhost:8358`
+
+Target: `https://yourdomain.com` (public, SSL, scalable)
+
+Infrastructure stack:
+
+Layer	Tool	Purpose	
+DNS + CDN	Cloudflare	SSL termination, DDoS protection, static asset caching	
+Load Balancer	Nginx / AWS ALB	WebSocket sticky sessions, SSL	
+App Servers	Gunicorn + Eventlet	Flask-SocketIO workers (scale horizontally)	
+Message Bus	Redis	SocketIO cross-server pub/sub, session store	
+Database	PostgreSQL	Campaign state, user accounts, persistent storage	
+File Storage	S3 / MinIO	Graphic packs, portraits, module assets	
+AI Proxy	Internal service	Rate limiting, caching, fallback models	
+
+Docker Compose for production:
+
+```yaml
+version: '3.8'
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+  
+  app:
+    build: .
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://db:5432/neq
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    deploy:
+      replicas: 3  # Scale horizontally
+  
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+  
+  postgres:
+    image: postgres:15
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+```
+
+---
+
+Implementation Roadmap
+
+Phase	Task	Effort	
+1. Foundation	Replace file-based state with PostgreSQL + Redis	2-3 days	
+2. Auth	Add JWT registration/login, campaign creation	1-2 days	
+3. SocketIO Rooms	Isolate campaigns into rooms, party join/leave	1-2 days	
+4. Turn Engine	Build turn sequencer, action validation	2-3 days	
+5. DM Multiplayer	Adapt DM wrapper for party context	2-3 days	
+6. Mobile UI	Responsive redesign, touch controls	3-4 days	
+7. Infrastructure	Docker production, SSL, hosting	2-3 days	
+8. Testing	Multi-device sync, race condition testing	2-3 days	
+
+Total: 15-20 days (given your track record of building fast)
+
+---
+
+Critical Technical Decisions
+
+1. Real-time vs. Async turns: For D&D, I recommend async turns with timeout (e.g., 2 min per turn) rather than requiring all players online simultaneously. Players can submit actions when ready.
+
+2. DM AI costs: With 4 players, your OpenAI costs 4x. Your compression system becomes essential — keep it, but add per-campaign caching so the same compressed context serves all party members.
+
+3. State authority: One player should be the "Campaign Host" with save/load privileges. Others are participants. This maps to your existing atomic operation pattern.
+
+4. Module ownership: Currently modules are local files. In multiplayer, the host's module selection determines the campaign world. Other players download module metadata on join.
+
+---
+
+If you can share specific files (paste contents of `web/web_interface.py`, `core/managers/campaign_manager.py`, or `config.py`), I can give you exact refactored code rather than architectural guidance.
