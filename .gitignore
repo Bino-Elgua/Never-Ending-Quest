@@ -433,3 +433,4 @@ local_settings.json
 saved_games/
 sessions/
 dummy_objective_c/
+config.py

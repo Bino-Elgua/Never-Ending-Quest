@@ -48,6 +48,9 @@ class GameManager:
 
     async def process_user_input(self, user_input: str, username: str = "Player") -> Dict[str, Any]:
         """Process player input and return hardened AI response"""
+        from utils.prompt_sanitizer import sanitize_user_input
+        user_input = sanitize_user_input(user_input)
+        
         history = self.get_conversation_history()
         
         # Add user message

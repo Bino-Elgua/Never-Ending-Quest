@@ -9,34 +9,28 @@ import config
 import re
 from model_config import DM_MINI_MODEL
 
-def sanitize_prompt(prompt: str) -> str:
+def sanitize_user_input(text: str) -> str:
     """
-    Sanitize a prompt that was rejected by DALL-E.
-    Uses GPT-4-mini to clean problematic content while preserving narrative.
+    Sanitize general user input to prevent prompt injection.
+    Removes common injection markers and restricts dangerous characters.
     """
-    client = OpenAI(api_key=config.OPENAI_API_KEY)
+    # Remove common injection control sequences
+    # (e.g., system instructions override)
+    injection_patterns = [
+        r"system:", 
+        r"user:", 
+        r"assistant:", 
+        r"---", 
+        r"###", 
+        r"\[.*\]", # Block bracket-based instruction override markers
+        r"\{.*\}"  # Block brace-based instruction override markers
+    ]
     
-    sanitization_request = """You are a prompt sanitizer for DALL-E 3. The following prompt was rejected for content policy violations.
-
-Your task is to rewrite it to be safe while preserving the dark fantasy atmosphere. Make these replacements:
-- Replace graphic violence ("gut me", "slit throat", etc.) with implied threats ("harm me", "threaten me")
-- Replace "cult" with "secret group" or "shadowy organization"
-- Replace mind-altering substances with "strange brew" or "mysterious concoction"
-- Reduce explicit fear/horror descriptions to atmospheric tension
-- Remove gore or body horror elements
-- Keep the narrative coherent and atmospheric
-
-Original prompt: """ + prompt + """
-
-Return ONLY the sanitized prompt, no explanations."""
-
-    response = client.chat.completions.create(
-        model=DM_MINI_MODEL,
-        messages=[
-            {"role": "system", "content": "You are a prompt sanitizer. Return only the cleaned prompt text."},
-            {"role": "user", "content": sanitization_request}
-        ],
-        temperature=0.3
-    )
+    sanitized = text
+    for pattern in injection_patterns:
+        sanitized = re.sub(pattern, "", sanitized, flags=re.IGNORECASE)
     
-    return response.choices[0].message.content.strip()
+    # Strip dangerous characters
+    sanitized = sanitized.replace("<", "&lt;").replace(">", "&gt;")
+    
+    return sanitized.strip()
