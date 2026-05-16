@@ -1,0 +1,13 @@
+{
+  "build": {
+    "builder": "DOCKERFILE"
+  },
+  "deploy": {
+    "startCommand": "python web/web_interface.py",
+    "restartPolicy": "ON_FAILURE"
+  },
+  "service": {
+    "name": "neverendingquest",
+    "icon": "https://cdn.railway.app/railway-logo.png"
+  }
+}
