@@ -21,8 +21,12 @@ tqdm>=4.65.0
 # HTTP requests for web interactions
 requests>=2.31.0
 
-# Token counting for OpenAI API usage tracking
+# token counting for OpenAI API usage tracking
 tiktoken>=0.5.0
+
+# Database and Cache for multiplayer support
+psycopg2-binary>=2.9.0
+redis>=5.0.0
 
 # Image processing for JPEG compression and thumbnail generation
 Pillow>=10.0.0

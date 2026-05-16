@@ -14,6 +14,8 @@ from utils.openrouter_client import OpenRouterClient
 from core.generators.map_generator import MapGenerator
 from core.ai.music_orchestrator import MusicOrchestrator
 
+from core.database import get_db
+
 class GameManager:
     """
     Central orchestrator for a single game session. 
@@ -22,6 +24,7 @@ class GameManager:
 
     def __init__(self, session_id: str):
         self.session_id = session_id
+        self.db = get_db()
         self.session = SessionManager(session_id)
         self.campaign_manager = CampaignManager(self.session)
         self.pacing_conductor = PacingConductor(session_id)
@@ -38,12 +41,10 @@ class GameManager:
         self.awaiting_combat_resolution = False
 
     def get_conversation_history(self) -> List[Dict[str, Any]]:
-        history_file = self.session.get_path("modules/conversation_history/conversation_history.json")
-        return safe_read_json(history_file) or []
+        return self.db.get_conversation_history(self.session_id)
 
     def save_conversation_history(self, history: List[Dict[str, Any]]):
-        history_file = self.session.get_path("modules/conversation_history/conversation_history.json")
-        safe_write_json(history_file, history)
+        self.db.save_conversation_history(self.session_id, history)
 
     async def process_user_input(self, user_input: str, username: str = "Player") -> Dict[str, Any]:
         """Process player input and return hardened AI response"""

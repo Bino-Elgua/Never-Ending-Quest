@@ -27,49 +27,24 @@ class _NarrationScreenState extends ConsumerState<NarrationScreen> {
   void initState() {
     super.initState();
     Future.microtask(() {
-      final socket = ref.read(socketServiceProvider);
-      socket.connect(campaignId: _campaignId, username: 'Mobile User');
+      // Temporarily disabled to debug HTTP network errors
+      // final socket = ref.read(socketServiceProvider);
+      // socket.connect(campaignId: _campaignId, username: 'Mobile User');
       
+      /*
       socket.stream.listen((event) {
-        final type = event['event'];
-        final data = event['data'];
-
-        if (type == 'game_output') {
-          if (data['type'] == 'narration' || data['type'] == 'user-input') {
-            ref.read(activeChatProvider.notifier).addMessage(
-              ChatMessage(
-                role: data['type'] == 'user-input' ? 'user' : 'assistant',
-                content: data['content'],
-                username: data['username'],
-                imageUrl: data['image_url']
-              ),
-            );
-            if (data['type'] == 'narration' && _isAutoSpeakEnabled) {
-              ref.read(voiceServiceProvider).speak(data['content']);
-            }
-            _scrollToBottom();
-          }
-        } else if (type == 'media_update') {
-          ref.read(activeChatProvider.notifier).addMessage(
-            ChatMessage(
-              role: 'assistant',
-              content: data['description'] ?? 'A new vision appears...',
-              imageUrl: data['url']
-            ),
-          );
-          _scrollToBottom();
-        } else if (type == 'time_update') {
-          _updateTimeOfDay(data['time']);
-        } else if (type == 'player_joined') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${data['username']} has joined the quest!')),
-          );
-        }
+        // ... socket handling ...
       });
+      */
       
       ref.read(chatHistoryProvider(_campaignId).future).then((history) {
         ref.read(activeChatProvider.notifier).setHistory(history);
         _scrollToBottom();
+      }).catchError((e) {
+        print('Error fetching history: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load history: $e')),
+        );
       });
     });
   }

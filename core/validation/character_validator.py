@@ -82,20 +82,14 @@ from utils.enhanced_logger import debug, info, warning, error, set_script_name
 set_script_name(__name__)
 
 class AICharacterValidator:
-    def __init__(self):
-        """Initialize AI-powered validator with caching"""
+    def __init__(self, session_id="default"):
+        """Initialize AI-powered validator with caching and session support"""
+        self.session_id = session_id
         self.logger = logging.getLogger(__name__)
         try:
             self.client = OpenAI(api_key=OPENAI_API_KEY)
         except Exception as e:
-            # Handle OpenAI client initialization error
-            error(f"Failed to initialize OpenAI client: {str(e)}", exception=e, category="character_validation")
-            error(f"OpenAI client initialization failed. This is likely an environment issue.", category="character_validation")
-            error(f"Error details: {type(e).__name__}: {str(e)}", category="character_validation")
-            info("Possible solutions:", category="character_validation")
-            info("1. Check if OpenAI library is properly installed: pip install openai==1.30.3", category="character_validation")
-            info("2. There may be a proxy or environment configuration issue", category="character_validation")
-            info("3. Try running in a different environment", category="character_validation")
+            error(f"Failed to initialize OpenAI client", exception=e, category="character_validation")
             raise
         self.corrections_made = []
         
@@ -103,8 +97,10 @@ class AICharacterValidator:
         self.ac_prompt = self._load_prompt('character_validator_ac.txt')
         self.inventory_prompt = self._load_prompt('character_validator_inventory.txt')
         
-        # Initialize validation cache
-        self.cache_file = os.path.join('modules', 'validation_cache.json')
+        # Initialize validation cache - use session-specific cache if needed, 
+        # but a global one is probably fine for common character data.
+        # For now, let's keep it in modules/
+        self.cache_file = os.path.join('modules', f'validation_cache_{session_id}.json')
         self.validation_cache = self._load_cache()
     
     def _load_prompt(self, filename: str) -> str:

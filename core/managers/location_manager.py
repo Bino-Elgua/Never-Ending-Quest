@@ -71,12 +71,12 @@ from utils.enhanced_logger import debug, info, warning, error, game_event, set_s
 # Set script name for logging
 set_script_name(__name__)
 
-def get_storage_at_location(location_id):
+def get_storage_at_location(location_id, session_id="default"):
     """Get all player storage containers at a specific location"""
     try:
         from core.managers.storage_manager import get_storage_manager
-        manager = get_storage_manager()
-        return manager.get_storage_at_location(location_id)
+        manager = get_storage_manager(session_id)
+        return manager.view_storage(location_id).get("storage", [])
     except Exception as e:
         debug(f"FILE_OP: Could not load storage at location {location_id}", category="storage_operations")
         return []
@@ -208,18 +208,19 @@ def update_world_conditions(current_conditions, new_location, current_area, curr
     else:
         return current_conditions
 
-def handle_location_transition(current_location, new_location, current_area, current_area_id, area_connectivity_id=None):
+def handle_location_transition(current_location, new_location, current_area, current_area_id, area_connectivity_id=None, session_id="default"):
     """Handle transition between locations, prioritizing ID matching"""
-    info(f"STATE_CHANGE: Location transition from '{current_location}' to '{new_location}'", category="location_transitions")
-    debug(f"STATE_CHANGE: Current area: '{current_area}', Current area ID: '{current_area_id}'", category="location_transitions")
-
-    party_tracker = load_json_file("party_tracker.json")
+    info(f"STATE_CHANGE: Location transition from '{current_location}' to '{new_location}' in session {session_id}", category="location_transitions")
+    
+    from core.database import get_db
+    db = get_db()
+    party_tracker = db.get_party_tracker(session_id)
     if party_tracker:
         # Get current module from party tracker for consistent path resolution
         current_module = party_tracker.get("module", "").replace(" ", "_")
         path_manager = ModulePathManager(current_module)
         current_area_file = path_manager.get_area_path(current_area_id)
-        current_area_data = load_json_file(current_area_file)
+        current_area_data = safe_json_load(current_area_file)
 
         if current_area_data and "locations" in current_area_data:
             # Find current location info 
@@ -351,11 +352,12 @@ def handle_location_transition(current_location, new_location, current_area, cur
                 party_tracker["worldConditions"]["currentAreaId"] = new_area_id_for_conditions
 
             try:
-                safe_json_dump(party_tracker, "party_tracker.json")
-                info("SUCCESS: Updated party_tracker.json with new location", category="file_operations")
+                db.save_party_tracker(session_id, party_tracker)
+                info(f"SUCCESS: Updated party tracker with new location in DB for session {session_id}", category="file_operations")
                 
                 # Log successful location transition as a game event
                 game_event("location_transition", {
+                    "session_id": session_id,
                     "from": current_location,
                     "to": new_location_info.get("location_name", new_location_info.get("name", "Unknown Location")),
                     "from_id": current_location_info.get("locationId", current_location) if current_location_info else current_location,
@@ -363,10 +365,10 @@ def handle_location_transition(current_location, new_location, current_area, cur
                     "area_change": new_area_id_for_conditions != current_area_id
                 })
             except Exception as e:
-                error(f"FAILURE: Failed to update party_tracker.json", exception=e, category="file_operations")
+                error(f"FAILURE: Failed to update party tracker in DB", exception=e, category="file_operations")
 
         # Get storage information for the new location
-        storage_containers = get_storage_at_location(new_location)
+        storage_containers = get_storage_at_location(new_location, session_id=session_id)
         storage_description = format_storage_description(storage_containers)
         
         base_prompt = f"Describe the immediate surroundings and any notable features or encounters in {new_location_info.get('location_name', new_location_info.get('name', 'this location'))}, based on its recent history and current state."

@@ -59,19 +59,12 @@ from utils.file_operations import safe_read_json, safe_write_json
 from utils.module_path_manager import ModulePathManager
 
 class AICharacterEffectsValidator:
-    def __init__(self):
-        """Initialize AI-powered effects validator"""
+    def __init__(self, session_id="default"):
+        """Initialize AI-powered effects validator with session support"""
+        self.session_id = session_id
         self.logger = logging.getLogger(__name__)
         self.client = OpenAI(api_key=OPENAI_API_KEY)
         self.corrections_made = []
-        # Get current module from party tracker for consistent path resolution
-        try:
-            from utils.encoding_utils import safe_json_load
-            party_tracker = safe_json_load("party_tracker.json")
-            current_module = party_tracker.get("module", "").replace(" ", "_") if party_tracker else None
-            self.path_manager = ModulePathManager(current_module)
-        except:
-            self.path_manager = ModulePathManager()  # Fallback to reading from file
         
     def validate_and_correct_effects(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -85,7 +78,7 @@ class AICharacterEffectsValidator:
         """
         self.corrections_made = []
         
-        # Get current game time from party tracker
+        # Get current game time from DB
         game_time = self.get_current_game_time()
         
         # Step 1: Categorize mixed effects using AI
@@ -103,9 +96,11 @@ class AICharacterEffectsValidator:
         return corrected_data
     
     def get_current_game_time(self) -> Dict[str, Any]:
-        """Get current game time from party tracker"""
+        """Get current game time from DB"""
         try:
-            party_data = safe_read_json("party_tracker.json")
+            from core.database import get_db
+            db = get_db()
+            party_data = db.get_party_tracker(self.session_id)
             if party_data and 'worldConditions' in party_data:
                 world = party_data['worldConditions']
                 return {
@@ -115,7 +110,7 @@ class AICharacterEffectsValidator:
                     'time': world.get('time', '00:00:00')
                 }
         except Exception as e:
-            self.logger.error(f"Could not load game time: {str(e)}")
+            self.logger.error(f"Could not load game time from DB: {str(e)}")
         
         # Default time if not found
         return {'year': 1492, 'month': 'Springmonth', 'day': 1, 'time': '00:00:00'}
@@ -525,26 +520,40 @@ Provide the corrected arrays following the response format."""
             return {}, False
 
 
-def validate_character_effects(file_path: str) -> bool:
+def validate_character_effects(file_path: str, session_id="default") -> bool:
     """
     Convenience function to validate character effects
     
     Args:
-        file_path: Path to character JSON file
+        file_path: Path to character JSON file (legacy)
+        session_id: The current game session ID
         
     Returns:
         True if validation successful, False otherwise
     """
     try:
-        validator = AICharacterEffectsValidator()
-        _, success = validator.validate_character_effects_safe(file_path)
+        validator = AICharacterEffectsValidator(session_id=session_id)
+        # In a DB-backed system, we should ideally pass character_name and session_id
+        # instead of a file path. For now, we'll try to extract the character name from the path.
+        character_name = os.path.basename(file_path).replace('.json', '')
+        
+        from core.database import get_db
+        db = get_db()
+        character_data = db.get_character(session_id, character_name)
+        
+        if not character_data:
+            print(f"Error: Character {character_name} not found in DB for session {session_id}")
+            return False
+            
+        corrected_data = validator.validate_and_correct_effects(character_data)
         
         if validator.corrections_made:
+            db.save_character(session_id, character_name, corrected_data)
             print(f"Effects corrections made: {validator.corrections_made}")
         else:
             print("No effects corrections needed")
             
-        return success
+        return True
         
     except Exception as e:
         print(f"Error validating character effects: {str(e)}")

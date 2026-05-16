@@ -12,7 +12,7 @@ class ApiClient {
 
   ApiClient({required this.baseUrl})
       : _dio = Dio(BaseOptions(
-          baseUrl: baseUrl,
+          baseUrl: baseUrl.endsWith('/') ? baseUrl : '$baseUrl/',
           connectTimeout: const Duration(seconds: 60),
           receiveTimeout: const Duration(seconds: 60),
         )) {
@@ -59,6 +59,7 @@ class ApiClient {
       }
       return Exception('API Error: ${e.response?.statusCode} - ${e.response?.data}');
     }
-    return Exception('Network Error: ${e.message}');
+    final detail = e.error != null ? ' (${e.error})' : '';
+    return Exception('Network Error: ${e.message ?? 'Unknown'}${detail}. URI: ${e.requestOptions.uri}');
   }
 }

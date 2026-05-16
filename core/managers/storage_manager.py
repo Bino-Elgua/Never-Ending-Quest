@@ -13,65 +13,33 @@ Commercial competing use is prohibited for 2 years from release.
 See LICENSE file for full terms.
 """
 
-# ============================================================================
-# STORAGE_MANAGER.PY - PLAYER STORAGE SYSTEM WITH ATOMIC FILE PROTECTION
-# ============================================================================
-# 
-# ARCHITECTURE ROLE: Player Storage Management Layer
-# 
-# This module implements a safe, atomic player storage system that allows
-# players to create and manage storage containers at specific locations.
-# All operations use backup/restore patterns to ensure data integrity.
-# 
-# KEY RESPONSIBILITIES:
-# - Manage player-created storage containers
-# - Execute atomic inventory transfers between characters and storage
-# - Provide backup/restore functionality for all file operations
-# - Validate all operations against schemas
-# - Maintain storage persistence across sessions and modules
-# 
-# SAFETY FEATURES:
-# - Atomic file operations with automatic rollback
-# - Character file backup before inventory modifications
-# - Storage file backup before any changes
-# - Schema validation for all data structures
-# - Full operation rollback on any failure
-# 
-# STORAGE DESIGN:
-# - Central player_storage.json repository
-# - Location-tied storage containers
-# - Player-initiated storage creation only
-# - Party-accessible storage by default
-# ============================================================================
-
-import json
 import os
-import shutil
 import uuid
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
-from pathlib import Path
 import jsonschema
-from utils.encoding_utils import safe_json_load, safe_json_dump
+from utils.encoding_utils import safe_json_load
 from utils.module_path_manager import ModulePathManager
-from utils.file_operations import safe_read_json, safe_write_json
 from core.validation.character_validator import AICharacterValidator
 from utils.enhanced_logger import debug, info, warning, error, set_script_name
 
 # Set script name for logging
 set_script_name(__name__)
 
+from core.database import get_db
+
 class StorageManager:
-    """Manages player storage with atomic file protection"""
+    """Manages player storage with database-backed persistence"""
     
-    def __init__(self):
+    def __init__(self, session_id: str = "default"):
         """Initialize storage manager"""
         debug("INITIALIZATION: Starting StorageManager", category="storage_operations")
-        self.storage_file = "player_storage.json"
+        self.session_id = session_id
+        self.db = get_db()
         self.schema_file = "schemas/storage_action_schema.json"
         # Get current module from party tracker for consistent path resolution
         try:
-            party_tracker = safe_json_load("party_tracker.json")
+            party_tracker = self.db.get_party_tracker(self.session_id)
             current_module = party_tracker.get("module", "").replace(" ", "_") if party_tracker else None
             self.path_manager = ModulePathManager(current_module)
             debug(f"INITIALIZATION: Module path manager initialized for module: {current_module}", category="storage_operations")
@@ -79,41 +47,14 @@ class StorageManager:
             warning(f"INITIALIZATION: Could not load party tracker, using default", category="storage_operations")
             self.path_manager = ModulePathManager()  # Fallback to reading from file
         self.character_validator = AICharacterValidator()
-        self._ensure_storage_file_exists()
         
-    def _ensure_storage_file_exists(self):
-        """Ensure player storage file exists with proper structure"""
-        if not os.path.exists(self.storage_file):
-            initial_data = {
-                "version": "1.0.0",
-                "lastUpdated": datetime.now().isoformat(),
-                "playerStorage": []
-            }
-            if safe_write_json(self.storage_file, initial_data):
-                info(f"FILE_OP: Created new storage file: {self.storage_file}", category="file_operations")
-            else:
-                error(f"FILE_OP: Failed to create storage file: {self.storage_file}", category="file_operations")
-            
-    def _create_backup(self, file_path: str) -> str:
-        """Create a timestamped backup of a file"""
-        if not os.path.exists(file_path):
-            return None
-            
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        backup_path = f"{file_path}.backup_{timestamp}"
-        shutil.copy2(file_path, backup_path)
-        return backup_path
+    def _get_storage_data(self) -> Dict[str, Any]:
+        """Retrieve storage data from database"""
+        return self.db.get_player_storage(self.session_id)
         
-    def _restore_backup(self, original_path: str, backup_path: str):
-        """Restore a file from backup"""
-        if backup_path and os.path.exists(backup_path):
-            shutil.copy2(backup_path, original_path)
-            os.remove(backup_path)
-            
-    def _cleanup_backup(self, backup_path: str):
-        """Remove backup file after successful operation"""
-        if backup_path and os.path.exists(backup_path):
-            os.remove(backup_path)
+    def _save_storage_data(self, data: Dict[str, Any]) -> bool:
+        """Save storage data to database"""
+        return self.db.save_player_storage(self.session_id, data)
             
     def _validate_storage_operation(self, operation: Dict[str, Any]) -> bool:
         """Validate storage operation against schema"""
@@ -175,9 +116,7 @@ class StorageManager:
         
     def _find_storage_at_location(self, location_id: str) -> List[Dict[str, Any]]:
         """Find all storage containers at a specific location"""
-        storage_data = safe_read_json(self.storage_file)
-        if not storage_data:
-            return []
+        storage_data = self._get_storage_data()
         return [
             storage for storage in storage_data.get("playerStorage", [])
             if storage.get("locationId") == location_id
@@ -185,12 +124,8 @@ class StorageManager:
         
     def _get_location_info(self, location_description: str) -> Tuple[str, str, str, str]:
         """Get location information from description"""
-        # This is a simplified implementation
-        # In practice, this would use AI or lookup tables to map descriptions to IDs
-        
-        # For now, get current location from party tracker
         try:
-            party_data = safe_json_load("party_tracker.json")
+            party_data = self.db.get_party_tracker(self.session_id)
             current_location_id = party_data.get("worldConditions", {}).get("currentLocationId", "UNKNOWN")
             current_location_name = party_data.get("worldConditions", {}).get("currentLocation", "Unknown Location")
             current_area_id = party_data.get("worldConditions", {}).get("currentAreaId", "UNKNOWN")
@@ -207,18 +142,9 @@ class StorageManager:
         if not self._validate_storage_operation(operation):
             return {"success": False, "error": "Invalid storage operation"}
             
-        storage_backup = None
-        
         try:
-            # Create backup of storage file
-            storage_backup = self._create_backup(self.storage_file)
-            if storage_backup:
-                debug(f"FILE_OP: Created backup: {storage_backup}", category="file_operations")
-            
             # Load current storage data
-            storage_data = safe_read_json(self.storage_file)
-            if not storage_data:
-                storage_data = {"playerStorage": []}
+            storage_data = self._get_storage_data()
             
             # Get location information
             location_id, location_name, area_id, area_name = self._get_location_info(
@@ -256,11 +182,8 @@ class StorageManager:
             storage_data["lastUpdated"] = datetime.now().isoformat()
             
             # Save updated storage data
-            if not safe_write_json(self.storage_file, storage_data):
+            if not self._save_storage_data(storage_data):
                 raise Exception("Failed to save storage data")
-            
-            # Clean up backup
-            self._cleanup_backup(storage_backup)
             
             info(f"SUCCESS: Created {operation['storage_type']} '{new_storage['deviceName']}' with ID {storage_id}", category="storage_operations")
             
@@ -271,11 +194,6 @@ class StorageManager:
             }
             
         except Exception as e:
-            # Restore backup on failure
-            if storage_backup:
-                self._restore_backup(self.storage_file, storage_backup)
-                warning(f"FAILURE: Storage creation failed, restored backup", category="storage_operations")
-                
             error(f"FAILURE: Failed to create storage - {str(e)}", category="storage_operations")
             return {"success": False, "error": f"Failed to create storage: {str(e)}"}
             
@@ -287,27 +205,16 @@ class StorageManager:
         if not self._validate_storage_operation(operation):
             return {"success": False, "error": "Invalid storage operation"}
             
-        character_backup = None
-        storage_backup = None
-        
         try:
-            # Get character file path
-            character_file = self.path_manager.get_character_path(operation["character"])
-            debug(f"FILE_OP: Loading character from {character_file}", category="file_operations")
-            
-            # Create backups
-            character_backup = self._create_backup(character_file)
-            storage_backup = self._create_backup(self.storage_file)
-            
             # Load character data
-            character_data = safe_read_json(character_file)
+            character_name = operation["character"]
+            character_data = self.db.get_character(self.session_id, character_name)
             if not character_data:
-                raise Exception(f"Could not load character data for {operation['character']}")
+                raise Exception(f"Could not load character data for {character_name}")
             
             # Handle both single item and multi-item operations
             items_to_store = []
             if "items" in operation:
-                # Multi-item operation
                 for item_info in operation["items"]:
                     has_item, available_quantity, item_data = self._find_item_in_character(
                         character_data, item_info["item_name"], item_info["quantity"]
@@ -318,7 +225,6 @@ class StorageManager:
                         raise Exception(f"Character only has {available_quantity} {item_info['item_name']}, requested {item_info['quantity']}")
                     items_to_store.append((item_info["item_name"], item_info["quantity"], item_data))
             else:
-                # Single item operation
                 has_item, available_quantity, item_data = self._find_item_in_character(
                     character_data, operation["item_name"], operation["quantity"]
                 )
@@ -331,7 +237,6 @@ class StorageManager:
             # Get or create storage
             storage_id = operation.get("storage_id")
             if not storage_id:
-                # Create new storage first
                 create_operation = {
                     "action": "create_storage",
                     "character": operation["character"],
@@ -344,32 +249,19 @@ class StorageManager:
                     raise Exception(f"Failed to create storage: {create_result['error']}")
                 storage_id = create_result["storage_id"]
                 
-            # Load storage data
-            storage_data = safe_read_json(self.storage_file)
-            if not storage_data:
-                storage_data = {"playerStorage": []}
-            
-            # Find the storage container
-            storage_container = None
-            for storage in storage_data["playerStorage"]:
-                if storage["id"] == storage_id:
-                    storage_container = storage
-                    break
+            storage_data = self._get_storage_data()
+            storage_container = next((s for s in storage_data["playerStorage"] if s["id"] == storage_id), None)
                     
             if not storage_container:
                 raise Exception(f"Storage container {storage_id} not found")
                 
-            # Process all items for storage
             storage_contents = storage_container["contents"]
             stored_item_names = []
             
             for item_name, quantity, item_data in items_to_store:
-                # Remove item from character
                 if not self._remove_item_from_character(character_data, item_name, quantity):
                     raise Exception(f"Failed to remove {item_name} from character")
                 
-                # Add item to storage
-                # Check if item already exists in storage
                 item_found = False
                 for stored_item in storage_contents:
                     if stored_item["item_name"] == item_name:
@@ -378,72 +270,32 @@ class StorageManager:
                         break
                         
                 if not item_found:
-                    # Add new item to storage - preserve ALL metadata from character equipment
-                    stored_item = item_data.copy()  # Copy complete item object
-                    stored_item["quantity"] = quantity  # Override quantity
-                    # Set equipped to False when storing (items in storage are not equipped)
+                    stored_item = item_data.copy()
+                    stored_item["quantity"] = quantity
                     stored_item["equipped"] = False
                     storage_contents.append(stored_item)
                 
                 stored_item_names.append(f"{quantity} {item_name}")
                 
-            # Update access log
             storage_container["lastAccessed"] = datetime.now().isoformat()
-            if "items" in operation:
-                # Multi-item log entry
-                storage_container["accessLog"].append({
-                    "character": operation["character"],
-                    "action": "store_items",
-                    "items": [{"item": name, "quantity": qty} for name, qty, _ in items_to_store],
-                    "timestamp": datetime.now().isoformat()
-                })
-            else:
-                # Single item log entry
-                storage_container["accessLog"].append({
-                    "character": operation["character"],
-                    "action": "store_item",
-                    "item": operation["item_name"],
-                    "quantity": operation["quantity"],
-                    "timestamp": datetime.now().isoformat()
-                })
+            storage_container["accessLog"].append({
+                "character": operation["character"],
+                "action": "store",
+                "timestamp": datetime.now().isoformat()
+            })
             
-            # Save updated character data
-            if not safe_write_json(character_file, character_data):
+            if not self.db.save_character(self.session_id, character_name, character_data):
                 raise Exception("Failed to save character data")
             
-            # Validate and save character data with AI validation
-            validated_character_data, validation_success = self.character_validator.validate_character_file_safe(character_file)
-            if not validation_success:
-                raise Exception("Character validation failed after store operation")
-            
-            # Save updated storage data
-            if not safe_write_json(self.storage_file, storage_data):
+            if not self._save_storage_data(storage_data):
                 raise Exception("Failed to save storage data")
             
-            # Clean up backups
-            self._cleanup_backup(character_backup)
-            self._cleanup_backup(storage_backup)
-            
-            # Create success message
-            if "items" in operation:
-                message = f"Stored {', '.join(stored_item_names)} in {storage_container['deviceName']}"
-            else:
-                message = f"Stored {operation['quantity']} {operation['item_name']} in {storage_container['deviceName']}"
-            
+            message = f"Stored items in {storage_container['deviceName']}"
             info(f"SUCCESS: {message}", category="storage_operations")
             
-            return {
-                "success": True,
-                "message": message
-            }
+            return {"success": True, "message": message}
             
         except Exception as e:
-            # Restore backups on failure
-            if character_backup:
-                self._restore_backup(character_file, character_backup)
-            if storage_backup:
-                self._restore_backup(self.storage_file, storage_backup)
-            
             error(f"FAILURE: Failed to store item - {str(e)}", category="storage_operations")    
             return {"success": False, "error": f"Failed to store item: {str(e)}"}
             
@@ -455,47 +307,22 @@ class StorageManager:
         if not self._validate_storage_operation(operation):
             return {"success": False, "error": "Invalid storage operation"}
             
-        character_backup = None
-        storage_backup = None
-        
         try:
-            # Get character file path
-            character_file = self.path_manager.get_character_path(operation["character"])
-            
-            # Create backups
-            character_backup = self._create_backup(character_file)
-            storage_backup = self._create_backup(self.storage_file)
-            
-            # Load data
-            character_data = safe_read_json(character_file)
+            character_name = operation["character"]
+            character_data = self.db.get_character(self.session_id, character_name)
             if not character_data:
-                raise Exception(f"Could not load character data for {operation['character']}")
-            storage_data = safe_read_json(self.storage_file)
-            if not storage_data:
-                storage_data = {"playerStorage": []}
+                raise Exception(f"Could not load character data for {character_name}")
             
-            # Find storage container
-            storage_container = None
-            for storage in storage_data["playerStorage"]:
-                if storage["id"] == operation["storage_id"]:
-                    storage_container = storage
-                    break
+            storage_data = self._get_storage_data()
+            storage_container = next((s for s in storage_data["playerStorage"] if s["id"] == operation["storage_id"]), None)
                     
             if not storage_container:
                 raise Exception(f"Storage container {operation['storage_id']} not found")
                 
-            # Handle both single item and multi-item operations
             items_to_retrieve = []
             if "items" in operation:
-                # Multi-item operation
                 for item_info in operation["items"]:
-                    # Find item in storage and validate availability
-                    stored_item = None
-                    for item in storage_container["contents"]:
-                        if item["item_name"] == item_info["item_name"]:
-                            stored_item = item
-                            break
-                            
+                    stored_item = next((i for i in storage_container["contents"] if i["item_name"] == item_info["item_name"]), None)
                     if not stored_item:
                         raise Exception(f"{item_info['item_name']} not found in storage")
                         
@@ -505,13 +332,7 @@ class StorageManager:
                         
                     items_to_retrieve.append((item_info["item_name"], item_info["quantity"], stored_item))
             else:
-                # Single item operation
-                stored_item = None
-                for item in storage_container["contents"]:
-                    if item["item_name"] == operation["item_name"]:
-                        stored_item = item
-                        break
-                        
+                stored_item = next((i for i in storage_container["contents"] if i["item_name"] == operation["item_name"]), None)
                 if not stored_item:
                     raise Exception(f"{operation['item_name']} not found in storage")
                     
@@ -521,95 +342,42 @@ class StorageManager:
                     
                 items_to_retrieve.append((operation["item_name"], operation["quantity"], stored_item))
             
-            # Process all items for retrieval
-            retrieved_item_names = []
-            
             for item_name, quantity, stored_item in items_to_retrieve:
-                # Remove item from storage
                 available_quantity = stored_item.get("quantity", 1)
                 if available_quantity == quantity:
                     storage_container["contents"].remove(stored_item)
                 else:
                     stored_item["quantity"] = available_quantity - quantity
                     
-                # Add item to character
                 self._add_item_to_character(character_data, stored_item, quantity)
-                
-                retrieved_item_names.append(f"{quantity} {item_name}")
             
-            # Update access log
             storage_container["lastAccessed"] = datetime.now().isoformat()
-            if "items" in operation:
-                # Multi-item log entry
-                storage_container["accessLog"].append({
-                    "character": operation["character"],
-                    "action": "retrieve_items",
-                    "items": [{"item": name, "quantity": qty} for name, qty, _ in items_to_retrieve],
-                    "timestamp": datetime.now().isoformat()
-                })
-            else:
-                # Single item log entry
-                storage_container["accessLog"].append({
-                    "character": operation["character"],
-                    "action": "retrieve_item",
-                    "item": operation["item_name"],
-                    "quantity": operation["quantity"],
-                    "timestamp": datetime.now().isoformat()
-                })
+            storage_container["accessLog"].append({
+                "character": operation["character"],
+                "action": "retrieve",
+                "timestamp": datetime.now().isoformat()
+            })
             
-            # Save updated character data
-            if not safe_write_json(character_file, character_data):
+            if not self.db.save_character(self.session_id, character_name, character_data):
                 raise Exception("Failed to save character data")
             
-            # Validate and save character data with AI validation
-            validated_character_data, validation_success = self.character_validator.validate_character_file_safe(character_file)
-            if not validation_success:
-                raise Exception("Character validation failed after retrieve operation")
-            
-            # Save updated storage data
-            if not safe_write_json(self.storage_file, storage_data):
+            if not self._save_storage_data(storage_data):
                 raise Exception("Failed to save storage data")
             
-            # Clean up backups
-            self._cleanup_backup(character_backup)
-            self._cleanup_backup(storage_backup)
-            
-            # Generate success message
-            if "items" in operation:
-                message = f"Retrieved {', '.join(retrieved_item_names)} from {storage_container['deviceName']}"
-            else:
-                message = f"Retrieved {operation['quantity']} {operation['item_name']} from {storage_container['deviceName']}"
-            
+            message = f"Retrieved items from {storage_container['deviceName']}"
             info(f"SUCCESS: {message}", category="storage_operations")
             
-            return {
-                "success": True,
-                "message": message
-            }
+            return {"success": True, "message": message}
             
         except Exception as e:
-            # Restore backups on failure
-            if character_backup:
-                self._restore_backup(character_file, character_backup)
-            if storage_backup:
-                self._restore_backup(self.storage_file, storage_backup)
-            
             error(f"FAILURE: Failed to retrieve item - {str(e)}", category="storage_operations")
             return {"success": False, "error": f"Failed to retrieve item: {str(e)}"}
             
     def view_storage(self, location_id: str = None) -> Dict[str, Any]:
         """View storage containers at a location"""
         try:
-            storage_data = safe_read_json(self.storage_file)
-            if not storage_data:
-                storage_data = {"playerStorage": []}
-            
-            if location_id:
-                # Get storage at specific location
-                location_storage = self._find_storage_at_location(location_id)
-            else:
-                # Get all storage
-                location_storage = storage_data.get("playerStorage", [])
+            storage_data = self._get_storage_data()
+            location_storage = self._find_storage_at_location(location_id) if location_id else storage_data.get("playerStorage", [])
                 
             storage_info = []
             for storage in location_storage:
@@ -623,31 +391,18 @@ class StorageManager:
                     "last_accessed": storage["lastAccessed"]
                 })
                 
-            return {
-                "success": True,
-                "storage": storage_info,
-                "count": len(storage_info)
-            }
+            return {"success": True, "storage": storage_info, "count": len(storage_info)}
             
         except Exception as e:
             return {"success": False, "error": f"Failed to view storage: {str(e)}"}
-            
-    def get_storage_at_location(self, location_id: str) -> List[Dict[str, Any]]:
-        """Get all storage containers at a specific location"""
-        try:
-            return self._find_storage_at_location(location_id)
-        except:
-            return []
 
-# Convenience functions for external use
-def get_storage_manager() -> StorageManager:
+def get_storage_manager(session_id: str = "default") -> StorageManager:
     """Get storage manager instance"""
-    return StorageManager()
+    return StorageManager(session_id)
 
-def execute_storage_operation(operation: Dict[str, Any]) -> Dict[str, Any]:
+def execute_storage_operation(operation: Dict[str, Any], session_id: str = "default") -> Dict[str, Any]:
     """Execute a storage operation"""
-    manager = get_storage_manager()
-    
+    manager = get_storage_manager(session_id)
     action = operation.get("action")
     
     if action == "create_storage":
@@ -657,7 +412,6 @@ def execute_storage_operation(operation: Dict[str, Any]) -> Dict[str, Any]:
     elif action == "retrieve_item":
         return manager.retrieve_item(operation)
     elif action == "view_storage":
-        location_id = operation.get("location_id")
-        return manager.view_storage(location_id)
+        return manager.view_storage(operation.get("location_id"))
     else:
         return {"success": False, "error": f"Unknown storage action: {action}"}

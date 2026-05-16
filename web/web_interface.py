@@ -45,6 +45,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 from flask import Flask, render_template, request, jsonify, Response
 from flask_socketio import SocketIO, emit
+from flask_jwt_extended import JWTManager
 import os
 import sys
 import json
@@ -142,6 +143,8 @@ app = Flask(__name__,
             template_folder=template_dir,
             static_folder=static_dir)
 app.config['SECRET_KEY'] = 'dungeon-master-secret-key'
+app.config['JWT_SECRET_KEY'] = 'super-secret-jwt-key'
+jwt = JWTManager(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Manual CORS implementation
@@ -155,10 +158,10 @@ def add_cors_headers(response):
 # Register API blueprints
 from api.v1.campaigns import campaigns_bp
 from api.v1.game import game_bp
-# from api.v1.config import config_bp
+from api.v1.auth import auth_bp
 app.register_blueprint(campaigns_bp, url_prefix='/api/v1/campaigns')
 app.register_blueprint(game_bp, url_prefix='/api/v1/game')
-# app.register_blueprint(config_bp, url_prefix='/api/v1/config')
+app.register_blueprint(auth_bp, url_prefix='/api/v1/auth')
 
 # Add static route for graphic_packs to improve thumbnail loading performance
 @app.route('/graphic_packs/<path:filename>')
@@ -177,12 +180,14 @@ log.setLevel(logging.INFO)  # Show all requests for debugging
 # Import shared state
 from web.shared_state import module_progress_queue
 
-# Global variables for managing output
-game_output_queue = queue.Queue()
-debug_output_queue = queue.Queue()
-user_input_queue = queue.Queue()
+# Global queues for communication (session_id -> Queue)
+from collections import defaultdict
+import queue
+game_output_queues = defaultdict(lambda: queue.Queue())
+debug_output_queues = defaultdict(lambda: queue.Queue())
+user_input_queues = defaultdict(lambda: queue.Queue())
 # module_progress_queue imported from shared_state
-game_thread = None
+game_threads = {} # Store threads per session
 original_stdout = sys.stdout
 original_stderr = sys.stderr
 original_stdin = sys.stdin
@@ -2071,11 +2076,18 @@ def handle_user_input(data):
             response = asyncio.run(manager.process_user_input(user_input, username))
             # Broadcast the DM response to the room
             socketio.emit('game_output', response, room=campaign_id)
+            sync_world_state(campaign_id)
         except Exception as e:
             from utils.enhanced_logger import error
             error(f"Error in process_ai: {e}")
             error_msg = {"type": "error", "content": f"The weave was interrupted: {str(e)}"}
             socketio.emit('game_output', error_msg, room=campaign_id)
+
+def sync_world_state(campaign_id):
+    """Sync key world state updates with all connected players"""
+    manager = get_game_manager(campaign_id)
+    party_tracker = manager.db.get_party_tracker(campaign_id)
+    socketio.emit('world_state_update', party_tracker, room=campaign_id)
 
     socketio.start_background_task(process_ai)
 @socketio.on('action')

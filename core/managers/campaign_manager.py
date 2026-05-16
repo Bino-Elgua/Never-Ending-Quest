@@ -80,19 +80,21 @@ from utils.enhanced_logger import debug, info, warning, error, game_event, set_s
 # Set script name for logging
 set_script_name(__name__)
 
+from core.database import get_db
+
 class CampaignManager:
     """Manages campaign state and inter-module continuity with session support"""
     
     def __init__(self, session_manager: Optional[Any] = None):
         """Initialize campaign manager with session scoping"""
         self.session_manager = session_manager
+        self.session_id = session_manager.session_id if session_manager else "default"
+        self.db = get_db()
         
         if self.session_manager:
-            self.campaign_file = self.session_manager.get_path("modules/campaign.json")
             self.summaries_dir = self.session_manager.get_path("modules/campaign_summaries")
             self.archives_dir = self.session_manager.get_path("modules/campaign_archives")
         else:
-            self.campaign_file = "modules/campaign.json"
             self.summaries_dir = "modules/campaign_summaries"
             self.archives_dir = "modules/campaign_archives"
             
@@ -110,8 +112,9 @@ class CampaignManager:
     
     def _load_campaign_data(self) -> Dict[str, Any]:
         """Load campaign data or create default"""
-        if os.path.exists(self.campaign_file):
-            return safe_json_load(self.campaign_file)
+        data = self.db.get_campaign_data(self.session_id)
+        if data:
+            return data
         else:
             # Create default campaign
             default_campaign = {
@@ -133,7 +136,7 @@ class CampaignManager:
                 "lastUpdated": datetime.now().isoformat(),
                 "version": "1.0.0"
             }
-            safe_json_dump(default_campaign, self.campaign_file)
+            self.db.save_campaign_data(self.session_id, default_campaign)
             return default_campaign
     
     def _scan_for_new_modules(self):
@@ -171,7 +174,7 @@ class CampaignManager:
                     
                     # Save updated campaign data
                     self.campaign_data['lastUpdated'] = datetime.now().isoformat()
-                    safe_json_dump(self.campaign_data, self.campaign_file)
+                    self.db.save_campaign_data(self.session_id, self.campaign_data)
                     
                     if newly_integrated:
                         info(f"INITIALIZATION: Integrated {len(newly_integrated)} new modules: {', '.join(newly_integrated)}", category="module_loading")
@@ -199,9 +202,11 @@ class CampaignManager:
         if self.campaign_data['completedModules']:
             context_parts.append("\nPREVIOUS ADVENTURES:")
             for module in self.campaign_data['completedModules']:
-                summary = self._load_module_summary(module)
-                if summary:
-                    context_parts.append(f"\n{module}: {summary.get('summary', 'No summary available')}")
+                summaries = self._load_module_summaries(module)
+                if summaries:
+                    # Use the latest summary for context
+                    latest = summaries[-1]
+                    context_parts.append(f"\n{module}: {latest.get('summary', 'No summary available')}")
         
         # Relationships
         if self.campaign_data['relationships']:
@@ -227,24 +232,7 @@ class CampaignManager:
     
     def _load_module_summaries(self, module_name: str) -> List[Dict[str, Any]]:
         """Load ALL module summaries for a given module (supports multiple visits)"""
-        import glob
-        
-        summaries = []
-        pattern = os.path.join(self.summaries_dir, f"{module_name}_summary_*.json")
-        summary_files = glob.glob(pattern)
-        
-        # Sort by sequence number
-        summary_files.sort(key=lambda x: self._extract_sequence_number(x))
-        
-        for summary_file in summary_files:
-            try:
-                summary = safe_json_load(summary_file)
-                if summary:
-                    summaries.append(summary)
-            except Exception as e:
-                warning(f"FILE_OP: Failed to load summary {summary_file}: {e}", category="file_operations")
-        
-        return summaries
+        return self.db.get_campaign_summaries(self.session_id, module_name)
     
     def _extract_sequence_number(self, file_path: str) -> int:
         """Extract sequence number from filename"""
@@ -367,11 +355,7 @@ class CampaignManager:
         summary["lastVisitDate"] = datetime.now().isoformat()
         
         # Save summary as living document (always _001)
-        summary_file = os.path.join(self.summaries_dir, f"{module_name}_summary_001.json")
-        
-        # Add sequence number to summary data (always 1 for living summaries)
-        summary["sequenceNumber"] = 1
-        safe_json_dump(summary, summary_file)
+        self.db.save_campaign_summary(self.session_id, module_name, 1, summary)
         
         # Update campaign state
         if module_name not in self.campaign_data['completedModules']:
@@ -385,7 +369,7 @@ class CampaignManager:
         
         # Save campaign state
         self.campaign_data['lastUpdated'] = datetime.now().isoformat()
-        safe_json_dump(self.campaign_data, self.campaign_file)
+        self.db.save_campaign_data(self.session_id, self.campaign_data)
         
         return summary
     
@@ -638,7 +622,6 @@ Focus on story outcomes, character development, and decisions that will matter i
         try:
             # Find next available sequence number
             sequence_num = self._get_next_sequence_number(self.archives_dir, f"{module_name}_conversation", ".json")
-            archive_file = os.path.join(self.archives_dir, f"{module_name}_conversation_{sequence_num:03d}.json")
             
             # Neutralize any module transition markers before archiving to prevent false detection on reload
             # Make a deep copy to avoid modifying the original
@@ -650,29 +633,20 @@ Focus on story outcomes, character development, and decisions that will matter i
             for msg in archived_history:
                 # Skip campaign context system messages
                 if msg.get("role") == "system" and "=== CAMPAIGN CONTEXT ===" in msg.get("content", ""):
-                    print(f"DEBUG: [Module Archive] Filtered out campaign context system message")
                     continue
                     
                 # Neutralize transition markers
                 if msg.get("role") == "user" and "Module transition:" in msg.get("content", ""):
                     # Modify the marker so it won't be detected as active
-                    original_content = msg["content"]
                     msg["content"] = msg["content"].replace("Module transition:", "[Archived] Module transition:", 1)
-                    print(f"DEBUG: [Module Archive] Neutralized transition marker: '{original_content}' -> '{msg['content']}'")
                 
                 filtered_history.append(msg)
             
-            archive_data = {
-                "moduleName": module_name,
-                "sequenceNumber": sequence_num,
-                "archiveDate": datetime.now().isoformat(),
-                "conversationHistory": filtered_history,
-                "totalMessages": len(filtered_history)
-            }
-            safe_json_dump(archive_data, archive_file)
-            print(f"DEBUG: [Module Archive] Archived {len(filtered_history)} messages to: {archive_file}")
-            info(f"SUCCESS: Archived {len(filtered_history)} conversation messages for {module_name} (sequence {sequence_num:03d})", category="summary_building")
-            return True
+            success = self.db.archive_conversation_history(self.session_id, module_name, sequence_num, filtered_history)
+            if success:
+                info(f"SUCCESS: Archived {len(filtered_history)} conversation messages for {module_name} (sequence {sequence_num:03d})", category="summary_building")
+                return True
+            return False
         except Exception as e:
             warning(f"FAILURE: Failed to archive conversation history for {module_name}: {e}", category="summary_building")
             return False
@@ -768,7 +742,7 @@ Focus on story outcomes, character development, and decisions that will matter i
         
         # Save state
         self.campaign_data['lastUpdated'] = datetime.now().isoformat()
-        safe_json_dump(self.campaign_data, self.campaign_file)
+        self.db.save_campaign_data(self.session_id, self.campaign_data)
         
         info(f"STATE_CHANGE: Hub established: {hub_name}", category="module_loading")
     
@@ -790,7 +764,7 @@ Focus on story outcomes, character development, and decisions that will matter i
         
         # Save state
         self.campaign_data['lastUpdated'] = datetime.now().isoformat()
-        safe_json_dump(self.campaign_data, self.campaign_file)
+        self.db.save_campaign_data(self.session_id, self.campaign_data)
     
     def can_start_module(self, module_name: str) -> bool:
         """Check if a module can be started"""
@@ -894,27 +868,22 @@ Focus on story outcomes, character development, and decisions that will matter i
             summary["lastVisitDate"] = datetime.now().isoformat()
             
             # Save summary as living document (always _001)
-            summary_file = os.path.join(self.summaries_dir, f"{from_module}_summary_001.json")
-            
-            # Add sequence number to summary data (always 1 for living summaries)
-            summary["sequenceNumber"] = 1
-            safe_json_dump(summary, summary_file)
-            print(f"DEBUG: [Module Summary] Summary saved to: {summary_file}")
-            
+            self.db.save_campaign_summary(self.session_id, from_module, 1, summary)
+            print(f"DEBUG: [Module Summary] Summary saved to database for module: {from_module}")
+
             # Update campaign state (track completion but allow revisits)
             if from_module not in self.campaign_data['completedModules']:
                 self.campaign_data['completedModules'].append(from_module)
-            
+
             # Handle module completion export
             self._handle_module_completion_export(from_module, summary)
-            
+
             # Save campaign state
             self.campaign_data['lastUpdated'] = datetime.now().isoformat()
-            safe_json_dump(self.campaign_data, self.campaign_file)
-            
+            self.db.save_campaign_data(self.session_id, self.campaign_data)
+
             info(f"SUCCESS: {from_module} summarized and archived (visit #{summary.get('visitCount', 1)})", category="summary_building")
             return summary
-        
         debug(f"STATE_CHANGE: No summary generated - no source module specified", category="module_loading")
         return None
     

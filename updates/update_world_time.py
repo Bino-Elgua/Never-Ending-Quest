@@ -5,13 +5,14 @@
 
 from datetime import datetime, timedelta
 import json
-from utils.encoding_utils import safe_json_load, safe_json_dump
+from core.database import get_db
 
-def update_world_time(time_estimate_str):
-    # Read the party tracker data from the JSON file with safe encoding
-    party_tracker_data = safe_json_load("party_tracker.json")
+def update_world_time(time_estimate_str, session_id="default"):
+    db = get_db()
+    # Read the party tracker data from the database
+    party_tracker_data = db.get_party_tracker(session_id)
     if party_tracker_data is None:
-        print("Error: Could not load party_tracker.json")
+        print(f"Error: Could not load party tracker for session {session_id}")
         return
 
     # Get the current world time and day from the party tracker data
@@ -67,8 +68,8 @@ def update_world_time(time_estimate_str):
     party_tracker_data["worldConditions"]["month"] = new_month
     party_tracker_data["worldConditions"]["year"] = new_year
 
-    # Save the updated party tracker data to the JSON file with safe encoding
-    safe_json_dump(party_tracker_data, "party_tracker.json", indent=4)
+    # Save the updated party tracker data to the database
+    db.save_party_tracker(session_id, party_tracker_data)
 
     # Debug print line in orange color
     if current_month != new_month:

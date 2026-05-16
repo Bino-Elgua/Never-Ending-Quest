@@ -19,48 +19,41 @@ def get_game_manager(session_id):
         game_sessions[session_id].session.initialize_session()
     return game_sessions[session_id]
 
+from core.database import get_db
+
 @game_bp.route('/<session_id>/status', methods=['GET'])
 def get_game_status(session_id):
     """Get the current state of the game scoped to a session"""
-    session = SessionManager(session_id)
-    party_file = session.get_path("party_tracker.json")
-    
-    party_tracker = safe_read_json(party_file)
+    db = get_db()
+    party_tracker = db.get_party_tracker(session_id)
     if not party_tracker:
         return jsonify({"success": False, "message": f"Session {session_id} not initialized"}), 404
         
     # Get current character data
     characters = []
-    module_name = party_tracker.get("module", "").replace(" ", "_")
-    path_manager = ModulePathManager(module_name)
-    
     for member_name in party_tracker.get("partyMembers", []):
         from updates.update_character_info import normalize_character_name
         norm_name = normalize_character_name(member_name)
-        char_data = safe_read_json(session.get_path(path_manager.get_character_path(norm_name)))
+        char_data = db.get_character(session_id, norm_name)
         if char_data:
             characters.append(char_data)
             
     # Get current location data
-    current_location = safe_read_json(session.get_path("current_location.json"))
+    current_location = db.get_current_location(session_id)
     
     return jsonify({
         "party_tracker": party_tracker,
         "characters": characters,
         "current_location": current_location,
-        "module": module_name
+        "module": party_tracker.get("module", "Unknown")
     })
 
 @game_bp.route('/<session_id>/chat-history', methods=['GET'])
 def get_chat_history(session_id):
     """Get the conversation history for a specific session"""
-    session = SessionManager(session_id)
-    history_file = session.get_path("modules/conversation_history/conversation_history.json")
-    history = safe_read_json(history_file)
-    if not history:
-        return jsonify([])
-    
-    return jsonify(history)
+    db = get_db()
+    history = db.get_conversation_history(session_id)
+    return jsonify(history or [])
 
 @game_bp.route('/<session_id>/action', methods=['POST'])
 def perform_action(session_id):
@@ -94,16 +87,18 @@ def perform_action(session_id):
             "message": f"AI processing failed: {str(e)}"
         }), 500
 
+from core.managers.pacing_conductor import PacingConductor
+
 @game_bp.route('/<session_id>/combat-status', methods=['GET'])
 def get_combat_status(session_id):
     """Get the current state of combat for a specific session"""
-    # In a full implementation, this would fetch from a persistent Conductor state
+    pacing = PacingConductor(session_id)
     return jsonify({
         "session_id": session_id,
-        "turn": 1,
-        "combatants": [
-            {"id": "p1", "name": "Valerius", "hp": 24, "maxHp": 30, "position": [2, 3], "isPlayer": True}
-        ]
+        "turn": pacing.turn_number,
+        "active_combatant": pacing.get_current_combatant(),
+        "is_active": pacing.is_combat_active,
+        "order": pacing.initiative_order
     })
 
 # --- DM COPILOT ENDPOINTS ---

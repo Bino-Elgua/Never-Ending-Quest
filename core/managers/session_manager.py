@@ -43,12 +43,12 @@ class SessionManager:
 
     def initialize_session(self, template_module: str = "The_Thornwood_Watch"):
         """Initialize a new session with template data if empty."""
-        party_file = self.get_path("party_tracker.json")
-        if not os.path.exists(party_file):
+        from core.database import get_db
+        db = get_db()
+        
+        party_tracker = db.get_party_tracker(self.session_id)
+        if not party_tracker:
             debug(f"SESSION: Initializing session {self.session_id} from default templates")
-            # In a production system, we'd copy from a 'templates' directory
-            # For now, if the global ones exist, we can use them as a starting point 
-            # or create defaults.
             default_party = {
                 "partyMembers": ["Valerius"],
                 "module": template_module,
@@ -58,7 +58,21 @@ class SessionManager:
                     "time": "Dawn"
                 }
             }
-            safe_json_dump(default_party, party_file)
+            db.save_party_tracker(self.session_id, default_party)
+            
+            # Also initialize other basic files
+            db.save_conversation_history(self.session_id, [])
+            db.save_player_storage(self.session_id, {"version": "1.0.0", "playerStorage": []})
+            db.save_campaign_data(self.session_id, {
+                "campaignName": "Fantasy Adventure Campaign",
+                "currentModule": template_module,
+                "availableModules": [template_module],
+                "completedModules": [],
+                "hubs": {},
+                "relationships": {},
+                "artifacts": {},
+                "worldState": {}
+            })
 
     @staticmethod
     def list_active_sessions():

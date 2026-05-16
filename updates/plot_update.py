@@ -37,14 +37,13 @@ def load_schema():
     with open("schemas/plot_schema.json", "r") as schema_file:
         return json.load(schema_file)
 
-def update_party_tracker(plot_point_id, new_status, plot_impact, plot_filename):
+def update_party_tracker(plot_point_id, new_status, plot_impact, session_id="default"):
     # DEPRECATED: activeQuests tracking has been deprecated in favor of using module_plot.json as the single source of truth
-    # The code below is commented out but preserved for reference and backward compatibility
-    # All quest data should be read directly from module_plot.json
     
-    party_tracker = safe_read_json("party_tracker.json")
+    db = get_db()
+    party_tracker = db.get_party_tracker(session_id)
     if not party_tracker:
-        error("FAILURE: Could not read party_tracker.json", category="file_operations")
+        error(f"FAILURE: Could not read party tracker for session {session_id}", category="database")
         return
 
     # Use ModulePathManager to get module plot path with current module
@@ -54,71 +53,32 @@ def update_party_tracker(plot_point_id, new_status, plot_impact, plot_filename):
 
     try:
         plot_info = safe_read_json(plot_file_path)
-    except FileNotFoundError:
-        error(f"FAILURE: Plot file {plot_filename} not found in update_party_tracker", category="file_operations")
+    except Exception as e:
+        error(f"FAILURE: Could not read plot file: {e}", category="file_operations")
         return
-    except json.JSONDecodeError:
-        error(f"FAILURE: Invalid JSON in {plot_filename} in update_party_tracker", category="file_operations")
-        return
-
-    # DEPRECATED: The following activeQuests update logic is no longer used
-    # module_plot.json is now the authoritative source for all quest data
-    """
-    plot_point_to_update = next((p for p in plot_info.get("plotPoints", []) if p["id"] == plot_point_id), None)
-
-    if plot_point_to_update:
-        existing_quest = next((q for q in party_tracker.get("activeQuests", []) if q.get("id") == plot_point_id), None)
-        if existing_quest:
-            existing_quest["status"] = new_status
-        elif new_status != "completed":
-            party_tracker.setdefault("activeQuests", []).append({ # Use setdefault for safety
-                "id": plot_point_id,
-                "title": plot_point_to_update["title"],
-                "description": plot_point_to_update["description"],
-                "status": new_status
-            })
-
-        for side_quest in plot_point_to_update.get("sideQuests", []):
-            existing_side_quest = next((q for q in party_tracker.get("activeQuests", []) if q.get("id") == side_quest["id"]), None)
-            if existing_side_quest:
-                existing_side_quest["status"] = side_quest["status"] # This should be new_status if it's for the SQ being updated
-                                                                  # Or, if side quests are updated independently, this is fine.
-                                                                  # Assuming side quests are updated based on their own status in plot_info.
-            elif side_quest["status"] != "completed": # Check side_quest's status from plot_info
-                 party_tracker.setdefault("activeQuests", []).append({
-                    "id": side_quest["id"],
-                    "title": side_quest["title"],
-                    "description": side_quest["description"],
-                    "status": side_quest["status"] # Use the status from plot_info
-                })
-
-    party_tracker["activeQuests"] = [q for q in party_tracker.get("activeQuests", []) if q.get("status") != "completed"]
-    """
 
     # Still save party_tracker in case other parts were modified
-    if not safe_write_json("party_tracker.json", party_tracker):
-        error("FAILURE: Failed to save party_tracker.json", category="file_operations")
+    db.save_party_tracker(session_id, party_tracker)
 
     debug(f"STATE_CHANGE: Party tracker updated for plot point {plot_point_id}", category="plot_updates")
 
-def update_plot(plot_point_id_param, new_status_param, plot_impact_param, plot_filename_param, max_retries=3): # Renamed params
+def update_plot(plot_point_id_param, new_status_param, plot_impact_param, session_id="default", max_retries=3): # Renamed params
+    db = get_db()
     try:
         # Use unified module plot file with current module from party tracker
-        party_tracker = safe_read_json("party_tracker.json")
+        party_tracker = db.get_party_tracker(session_id)
         current_module = party_tracker.get("module", "").replace(" ", "_") if party_tracker else None
         path_manager = ModulePathManager(current_module)
         plot_file_path = path_manager.get_plot_path()
-            
+
         plot_info_data = safe_read_json(plot_file_path)
         if not plot_info_data:
             error("FAILURE: Could not read plot file", category="file_operations")
             return None
-    except FileNotFoundError:
-        error(f"FAILURE: Plot file {plot_filename_param} not found", category="file_operations")
-        return None # Or raise error
-    except json.JSONDecodeError:
-        error(f"FAILURE: Invalid JSON in {plot_filename_param}", category="file_operations")
-        return None # Or raise error
+    except Exception as e:
+        error(f"FAILURE: Could not load plot state: {e}", category="plot_updates")
+        return None
+
 
 
     plot_schema_data = load_schema() # Renamed variable
@@ -191,7 +151,7 @@ Examples:
                 error("FAILURE: Failed to save plot file", category="file_operations")
                 return plot_info_data
 
-            update_party_tracker(plot_point_id_param, new_status_param, plot_impact_param, plot_filename_param)
+            update_party_tracker(plot_point_id_param, new_status_param, plot_impact_param, session_id=session_id)
 
             debug(f"STATE_CHANGE: Plot information updated for plot point {plot_point_id_param}", category="plot_updates")
             

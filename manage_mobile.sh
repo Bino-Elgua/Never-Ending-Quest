@@ -80,7 +80,7 @@ do_run() {
 	           flutter run -d web-server \
 	             --web-hostname 0.0.0.0 \
 	             --web-port 8080 \
-	             --dart-define=API_HOST=http://127.0.0.1:$BACKEND_PORT ;;
+	             --dart-define=API_HOST=http://127.0.0.1:$BACKEND_PORT/ ;;
 	        2) flutter run -d linux ;;
         3) flutter run -d android ;;
         *) echo "Invalid selection." ;;
