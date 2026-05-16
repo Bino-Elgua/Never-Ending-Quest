@@ -7,11 +7,12 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
+      - ./neverendingquest.db:/app/neverendingquest.db
     ports:
-      - "8357:8357" # Web interface
-      - "5000:8357" # Mobile API access on an easy port
+      - "8357:8357"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DATABASE_TYPE=sqlite
       - WEB_PORT=8357
     working_dir: /app
     tty: true

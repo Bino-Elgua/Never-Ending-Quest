@@ -20,30 +20,40 @@ class SocketService {
 
   void connect({String? campaignId, String? username}) {
     _channel = WebSocketChannel.connect(Uri.parse(url));
+    
     _channel!.stream.listen((message) {
-      try {
-        final decoded = jsonDecode(message);
-        _controller.add(decoded);
-      } catch (e) {}
+      final msg = message.toString();
+      
+      if (msg.startsWith('40')) {
+        if (campaignId != null) {
+          send('join_campaign', {
+            'campaign_id': campaignId,
+            'username': username ?? 'Adventurer'
+          });
+        }
+      }
+      else if (msg.startsWith('42')) {
+        try {
+          final jsonStr = msg.substring(2);
+          final decoded = jsonDecode(jsonStr);
+          if (decoded is List && decoded.length >= 2) {
+            _controller.add({'event': decoded[0], 'data': decoded[1]});
+          }
+        } catch (e) {
+          print('Error decoding socket message: $e');
+        }
+      }
     }, onDone: () {
       _controller.add({'event': 'disconnected'});
     }, onError: (error) {
       _controller.add({'event': 'error', 'message': error.toString()});
     });
-
-    if (campaignId != null) {
-      send('join_campaign', {
-        'campaign_id': campaignId,
-        'username': username ?? 'Adventurer'
-      });
-    }
   }
 
   void send(String event, dynamic data) {
     if (_channel != null) {
-      // Standard Socket.IO framing would be better here, but for this 
-      // prototype we assume the backend handles the EIO=4 websocket format.
-      _channel!.sink.add(jsonEncode({'event': event, 'data': data}));
+      final payload = jsonEncode([event, data]);
+      _channel!.sink.add('42$payload');
     }
   }
 

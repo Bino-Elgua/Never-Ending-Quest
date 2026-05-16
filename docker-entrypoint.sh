@@ -1,23 +1,16 @@
 #!/bin/sh
 set -e
 
-cd /app
+# Ensure data directory exists for persistent storage
+mkdir -p /app/data
 
-if [ ! -f config.py ]; then
-  cp config_template.py config.py
+# Use the .env file if it exists, otherwise fall back to environment variables
+if [ -f /app/.env ]; then
+    echo "Loading environment from .env file"
 fi
 
-if [ -n "$OPENAI_API_KEY" ]; then
-  python - <<'PY'
-from pathlib import Path
-import re, os
-path = Path('config.py')
-text = path.read_text()
-text = re.sub(r'^OPENAI_API_KEY\s*=.*$', f'OPENAI_API_KEY = "{os.environ["OPENAI_API_KEY"]}"', text, flags=re.M)
-if os.environ.get('WEB_PORT'):
-    text = re.sub(r'^WEB_PORT\s*=.*$', f'WEB_PORT = {os.environ["WEB_PORT"]}', text, flags=re.M)
-path.write_text(text)
-PY
-fi
+# Initialize the database (SQLite)
+python -c "import sqlite3; sqlite3.connect('/app/neverendingquest.db').close()"
 
+# Start the application
 exec python web/web_interface.py
